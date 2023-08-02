@@ -1,0 +1,2 @@
+g++ grading/submissions/5f5ab53bf6233fa9b50f1363f753008b36a9a7ac98a3b5e262e03d34601b6e7f -o grading/compiled/0 -Wall -static -std=c++2a -DONLINE_JUDGE -DOGS
+g++ grading/submissions/481506e43ba8e11efe61d029e27c2ac09727ed5590c07771dd4a89772298c300.cpp -o grading/compiled/0 -Wall -static -std=c++2a -DONLINE_JUDGE -DOGS

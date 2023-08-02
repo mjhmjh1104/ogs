@@ -15,5 +15,11 @@
   "bugs": {
     "url": "https://github.com/mjhmjh1104/ogs/issues"
   },
-  "homepage": "https://github.com/mjhmjh1104/ogs#readme"
+  "homepage": "https://github.com/mjhmjh1104/ogs#readme",
+  "dependencies": {
+    "body-parser": "^1.20.2",
+    "child_process": "^1.0.2",
+    "ejs": "^3.1.9",
+    "express": "^4.18.2"
+  }
 }

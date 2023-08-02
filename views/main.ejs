@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>OGS</title>
+</head>
+<body>
+    <% problems.forEach(function (item) { %>
+    <a href="/<%= item.num %>"><%= item.title %></a><br>
+    <% }); %>
+</body>
+</html>

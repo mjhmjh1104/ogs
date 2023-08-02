@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title><%= title %></title>
+</head>
+<body>
+    <h1><%= title %></h1>
+    <form method="POST" action="/<%= num %>/submit" accept-charse="utf-8">
+        Language: C++20<br>
+        <input name="user"></input><br>
+        <textarea name="code"></textarea><br>
+        <button type="submit">Submit</button>
+    </form>
+    <a href="/<%= num %>">Back</a>
+</body>
+</html>
