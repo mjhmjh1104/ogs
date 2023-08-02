@@ -1,0 +1,19 @@
+{
+  "name": "ogs",
+  "version": "1.0.0",
+  "description": "",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/mjhmjh1104/ogs.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/mjhmjh1104/ogs/issues"
+  },
+  "homepage": "https://github.com/mjhmjh1104/ogs#readme"
+}
