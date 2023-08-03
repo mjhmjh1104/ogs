@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title><%= submission.id %></title>
+    <style>
+        .var {
+            display: inline;
+        }
+        code {
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <h1>Submission #<%= submission.cnt %></h1>
+    <code><%= code %></code><br>
+    Time: <div id="time" class="var"><%= submission.time %></div> milliseconds<br>
+    Memory: <div id="mem" class="var"><%= submission.memory %></div> bytes<br>
+    Result: <div id="result" class="var"><%= result %></div><br>
+
+    <a href="/<%= submission.problem %>">Problem</a>
+    <a href="/<%= submission.problem %>/submissions">List</a>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="//code.jquery.com/jquery-1.12.4.min.js"></script>
+    <script>
+        var socket = io();
+        socket.on('hello', function (data) {
+            socket.emit('id', '<%= submission.id %>');
+        });
+        socket.on('updt', function (data) {
+            $('#result').html(data.result);
+            $('#time').html(data.time);
+            $('#mem').html(data.mem);
+        });
+    </script>
+</body>
+</html>

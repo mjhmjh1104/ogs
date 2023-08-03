@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title><%= title %></title>
+</head>
+<body>
+    <h1><%= title %> submissions</h1>
+    <table>
+        <tr>
+            <td>#</td>
+            <td>Author</td>
+            <td>Result</td>
+            <td>More</td>
+        </tr>
+<% submissions.forEach(function (item) { %>
+        <tr>
+            <td><%= item.cnt %></td>
+            <td><%= item.user %></td>
+            <td><%= getResult(item.result) %></td>
+            <td><a href="/detail/<%= item.id %>">#</a></td>
+        </tr>
+<% }); %>
+    </table>
+    <a href="/<%= num %>">Problem</a>
+</body>
+</html>
