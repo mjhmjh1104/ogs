@@ -86,6 +86,10 @@ app.get('/signin', function (req, res) {
 app.post('/signin', async function (req, res) {
     if (req.session.auth) return res.redirect('/');
     const rows = (await sql.query(`SELECT password FROM users WHERE user = ${mysql.escape(req.body.user)}`))[0];
+    if (rows.length == 0) return res.render('login', {
+        username: req.body.user,
+        error: 'Invalid username or password'
+    });
     if (await bcrypt.compare(req.body.password, rows[0].password)) {
         req.session.auth = {
             user: req.body.user
