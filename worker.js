@@ -5,6 +5,7 @@ const path = require('path');
 const util = require('util');
 const exec = util.promisify(require('child_process').exec);
 const decompress = require('decompress');
+const chmodr = require('chmodr');
 
 var workingDir = null;
 
@@ -28,6 +29,12 @@ async function mkdir(path) {
         }
         workingDir = stdout;
         mkdir(`grading/isolate/${data.workerNum}`);
+        chmodr(`grading/isolate/${data.workerNum}`, 0o777, function (error) {
+            if (error) {
+                console.log(error);
+                throw new Error ('Unable to start isolate');
+            }
+        });
         addBinding(path.join(__dirname, `grading/isolate/${data.workerNum}`), 'files', 'rw');
         parentPort.postMessage({
             workerNum: data.workerNum,
