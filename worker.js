@@ -19,8 +19,8 @@ async function mkdir(path) {
     }
 }
 
-(async function initialize() {
-    exec(`isolate/isolate --init --cg --box-id=${data.workerNum}`, function (error, stdout, stderr) {
+(function initialize() {
+    exec(`isolate/isolate --init --cg --box-id=${data.workerNum}`, async function (error, stdout, stderr) {
         if (error && stderr.includes('exist')) return exec(`isolate/isolate --cg --cleanup --box-id=${data.workerNum}`, function (error, stdout, stderr) {
             initialize();
         }); else if (error) {
