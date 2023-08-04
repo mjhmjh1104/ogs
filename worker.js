@@ -19,7 +19,7 @@ async function mkdir(path) {
     }
 }
 
-(function initialize() {
+(async function initialize() {
     exec(`isolate/isolate --init --cg --box-id=${data.workerNum}`, function (error, stdout, stderr) {
         if (error && stderr.includes('exist')) return exec(`isolate/isolate --cg --cleanup --box-id=${data.workerNum}`, function (error, stdout, stderr) {
             initialize();
@@ -28,7 +28,7 @@ async function mkdir(path) {
             throw new Error ('Unable to start isolate');
         }
         workingDir = stdout;
-        mkdir(`grading/isolate/${data.workerNum}`);
+        await mkdir(`grading/isolate/${data.workerNum}`);
         chmodr(`grading/isolate/${data.workerNum}`, 0o777, function (error) {
             if (error) {
                 console.log(error);
