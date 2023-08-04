@@ -4,12 +4,18 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><%= title %></title>
+    <style>
+        textarea {
+            width: 700px;
+            height: 300px;
+        }
+    </style>
 </head>
 <body>
     <h1><%= title %></h1>
     <form method="POST" action="/<%= num %>/submit" accept-charse="utf-8">
         Language: C++20<br>
-        Username: <input name="user"></input><br>
+        Username: <%= user.user %><br>
         <textarea name="code"></textarea><br>
         <button type="submit">Submit</button>
     </form>

@@ -78,6 +78,17 @@ parentPort.on('message', async function (msg) {
     }
 });
 
+function tmpResult(res, id) {
+    parentPort.postMessage({
+        workerNum: data.workerNum,
+        data: 'updt',
+        content: {
+            id: id,
+            result: res
+        }
+    });
+}
+
 async function getLog(log, legend) {
     const content = await fs.readFile(log);
     const lt = content.toString().match(new RegExp(`${legend}:|.+`, 'g'));
@@ -95,11 +106,20 @@ async function grade(submission) {
     var totaltime = 0;
     var totalwalltime = 0;
     var totalmem = 0;
+    var timeConsumed = 0, lastTimeConsumed = 0;
     var r = 'AC';
     try {
+        tmpResult({
+            result: 'RD',
+            done: 0
+        }, submission.filename);
         await exec(`cp grading/compilers/c++20.sh grading/isolate/${data.workerNum}/compile.sh`);
         await exec(`cp grading/submissions/${submission.filename} grading/isolate/${data.workerNum}/submission.cpp`);
         await exec(`cp grading/checkers/diff.cpp grading/isolate/${data.workerNum}/checker.cpp`);
+        tmpResult({
+            result: 'CP',
+            done: 0
+        }, submission.filename);
         try {
             await isolateExec('/files/compile.sh', '/files/checker.cpp /files/checker', 10, 21, 512 * 1024 * 1024, 1000, COMPILE_CHECKER_LOG);
         } catch (e) {
@@ -114,7 +134,7 @@ async function grade(submission) {
             if (status == 'TO') return {
                 result: 'CL'
             };
-            if (status == 'RE' || status == 'SG') return {
+            if (status == 'SG') return {
                 result: 'CR'
             };
             if (status == 'XX') return {
@@ -124,9 +144,18 @@ async function grade(submission) {
                 result: 'CE'
             };
         }
+        tmpResult({
+            result: 'FD',
+            done: 0
+        }, submission.filename);
         await decompress(`archive/${submission.problem}/data.zip`, `grading/isolate/${data.workerNum}/archive`);
         const info = JSON.parse(await fs.readFile(`grading/isolate/${data.workerNum}/archive/data/info.json`));
+        tmpResult({
+            result: 'GD',
+            done: 0
+        }, submission.filename);
         for (idx in info.data) {
+            const curr = parseInt(idx);
             var cnt = info.data[idx];
             try {
                 const { stdout, stderr } = await isolateExec('/files/exec', `--stdin=/files/archive/data/${cnt}.in --stdout=/files/out --stderr=/files/err`, info.tl / 1000, info.wl / 1000, info.ml, 1, EXEC_LOG);
@@ -172,6 +201,14 @@ async function grade(submission) {
                 return {
                     result: 'CD'
                 };
+            }
+            timeConsumed += walltime;
+            if (timeConsumed > lastTimeConsumed + 500) {
+                lastTimeConsumed = timeConsumed;
+                tmpResult({
+                    result: 'GD',
+                    done: (curr + 1) / info.data.length
+                }, submission.filename);
             }
         }
     } catch (e) {

@@ -16,9 +16,11 @@
 <body>
     <h1>Submission #<%= submission.cnt %></h1>
     <code><%= code %></code><br>
+    Submitted on <%= submission.submitDate %><br>
     Time: <div id="time" class="var"><%= submission.time %></div> milliseconds<br>
     Memory: <div id="mem" class="var"><%= submission.memory %></div> bytes<br>
     Result: <div id="result" class="var"><%= result %></div><br>
+    Progress: <div id="prog" class="var">100%</div><br>
 
     <a href="/<%= submission.problem %>">Problem</a>
     <a href="/<%= submission.problem %>/submissions">List</a>
@@ -34,6 +36,7 @@
             $('#result').html(data.result);
             $('#time').html(data.time);
             $('#mem').html(data.mem);
+            if (data.progress !== undefined) $('#prog').html(data.progress * 100 + '%');
         });
     </script>
 </body>

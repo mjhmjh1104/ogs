@@ -6,6 +6,13 @@
     <title>OGS</title>
 </head>
 <body>
+<% if (!user) { %>
+    <a href="/signin">Sign in</a>
+<% } else { %>
+    Hello <%= user.user %>
+    <a href="/signout">Sign out</a>
+<% } %>
+    <a href="/users">Users</a><br>
     <% problems.forEach(function (item) { %>
     <a href="/<%= item.num %>"><%= item.title %></a><br>
     <% }); %>

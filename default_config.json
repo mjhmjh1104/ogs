@@ -1,3 +1,5 @@
 {
-    "sqlpw": "ogs!"
+    "sqlpw": "ogs!",
+    "sessSecret": "ogs_session",
+    "salt": 0
 }
