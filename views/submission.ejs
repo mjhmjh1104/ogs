@@ -16,7 +16,7 @@
 <body>
     <h1>Submission #<%= submission.cnt %></h1>
     <code><%= code %></code><br>
-    Submitted on <%= submission.submitDate %><br>
+    Submitted on <%= submission.submitDate %> by <%= submission.user %><br>
     Time: <div id="time" class="var"><%= submission.time %></div> milliseconds<br>
     Memory: <div id="mem" class="var"><%= submission.memory %></div> bytes<br>
     Result: <div id="result" class="var"><%= result %></div><br>
