@@ -303,14 +303,17 @@ http.listen(port, function (req, res) {
     }
     // id, user, result, marks
     (async function () {
-        sql = await mysql.createConnection({
+        sql = await mysql.createPool({
             host: '127.0.0.1',
             user: 'ogs',
             password: sqlpw,
-            database: 'ogs'
+            database: 'ogs',
+            waitForConnections: true,
+            enableKeepAlive: true
         });
-        await sql.query('CREATE TABLE IF NOT EXISTS submissions (cnt INT UNIQUE NOT NULL AUTO_INCREMENT, id CHAR(64) PRIMARY KEY, user VARCHAR(100) NOT NULL, result VARCHAR(5), marks INT, problem INT NOT NULL, time DOUBLE, memory DOUBLE, submitDate DATETIME DEFAULT CURRENT_TIMESTAMP);');
+        await sql.query('CREATE TABLE IF NOT EXISTS submissions (cnt INT UNIQUE NOT NULL AUTO_INCREMENT, id CHAR(64) PRIMARY KEY, user VARCHAR(100) NOT NULL, result VARCHAR(5), marks INT, problem VARCHAR(100) NOT NULL, time DOUBLE, memory DOUBLE, submitDate DATETIME DEFAULT CURRENT_TIMESTAMP);');
         await sql.query('CREATE TABLE IF NOT EXISTS users (cnt INT UNIQUE NOT NULL AUTO_INCREMENT, user VARCHAR(100) PRIMARY KEY, password VARCHAR(100) NOT NULL, registerDate DATETIME DEFAULT CURRENT_TIMESTAMP, admin BOOLEAN NOT NULL DEFAULT 0);');
+        await sql.query('CREATE INDEX IF NOT EXISTS problemIndex ON submissions (problem);');
         console.log('SQL config done');
     })();
 })();
