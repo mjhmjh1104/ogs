@@ -68,9 +68,9 @@ app.use(session({
 app.use(cookieParser());
 
 app.get('/', async function (req, res) {
-    const content = JSON.parse(await fs.readFile('archive/problems.json')).problems;
+    const [ rows, fields ] = await sql.query(`SELECT * FROM problems;`);
     return res.render('main', {
-        problems: content,
+        problems: rows,
         user: req.session.auth
     });
 });
@@ -85,14 +85,15 @@ app.get('/signin', function (req, res) {
 
 app.post('/signin', async function (req, res) {
     if (req.session.auth) return res.redirect('/');
-    const rows = (await sql.query(`SELECT password FROM users WHERE user = ${mysql.escape(req.body.user)}`))[0];
+    const rows = (await sql.query(`SELECT password, admin FROM users WHERE user = ${mysql.escape(req.body.user)}`))[0];
     if (rows.length == 0) return res.render('login', {
         username: req.body.user,
         error: 'Invalid username or password'
     });
     if (await bcrypt.compare(req.body.password, rows[0].password)) {
         req.session.auth = {
-            user: req.body.user
+            user: req.body.user,
+            admin: rows[0].admin
         };
         req.session.save();
         res.redirect('/');
@@ -135,7 +136,7 @@ app.post('/register', async function (req, res) {
             error: 'Password cannot be empty'
         });
     }
-    if ((await sql.query(`SELECT COUNT(1) FROM users WHERE user = ${mysql.escape(req.body.user)}`))[0][0]['COUNT(1)'] == 1) {
+    if ((await sql.query(`SELECT COUNT(1) FROM users WHERE user = ${mysql.escape(req.body.user)}`))[0][0]['COUNT(1)'] >= 1) {
         return res.render('register', {
             username: req.body.user,
             error: 'Invalid username'
@@ -147,39 +148,64 @@ app.post('/register', async function (req, res) {
 });
 
 app.get('/users', async function (req, res) {
-    const rows = (await sql.query(`SELECT cnt, user, registerDate FROM users`))[0];
+    const rows = (await sql.query(`SELECT cnt, user, registerDate, admin FROM users`))[0];
     return res.render('users', {
-        users: rows
+        users: rows,
+        user: req.session.auth
     });
-})
+});
+
+app.post('/users/:id/admin', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/users');
+    if (!req.session.auth.admin) res.redirect('/users');
+    const [ rows, fields ] = await sql.query(`UPDATE users SET admin = NOT admin WHERE user = ${mysql.escape(req.params.id)};`);
+    res.redirect('/users');
+});
+
+app.post('/users/:id/delete', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/users');
+    if (!req.session.auth.admin) res.redirect('/users');
+    const [ rows, fields ] = await sql.query(`DELETE FROM users WHERE user = ${mysql.escape(req.params.id)};`);
+    res.redirect('/users');
+});
 
 app.get('/detail/:id', async function (req, res) {
-    const rows = (await sql.query(`SELECT cnt, id, user, result, problem, time, memory, submitDate FROM submissions WHERE id = ${mysql.escape(req.params.id)}`))[0];
+    const [ rows, fields ] = await sql.query(`SELECT cnt, id, user, result, problem, time, memory, submitDate FROM submissions WHERE id = ${mysql.escape(req.params.id)};`);
     if (rows.length == 0) return res.send('Not Found');
     const code = await fs.readFile(`grading/submissions/${req.params.id}`);
     return res.render('submission', {
         code: code.toString(),
         submission: rows[0],
         result: getResult(rows[0].result),
+        user: req.session.auth
     });
 });
 
-app.get('/:num', async function (req, res) {
-    try {
-        await fs.access(`archive/${req.params.num}`);
-    } catch (e) {
-        return res.send('Not Found');
-    }
+app.post('/detail/:id/delete', async function (req, res) {
+    const [ rows, fields ] = await sql.query(`SELECT user, result, problem FROM submissions WHERE id = ${mysql.escape(req.params.id)};`);
+    if (rows.length == 0) return res.send('Not Found');
+    if (!req.session.auth) return res.redirect(`/detail/${req.params.id}`);
+    if (!req.session.auth.admin && req.session.auth.user !== rows[0].user) return req.redirect(`/detail/${req.params.id}`);
+    await sql.query(`DELETE FROM submissions WHERE id = ${mysql.escape(req.params.id)};`);
+    if (rows[0].result === 'AC') await sql.query(`UPDATE problems SET correctCnt = correctCnt - 1 WHERE num = ${mysql.escape(rows[0].problem)};`);
+    await sql.query(`UPDATE problems SET submitCnt = submitCnt - 1 WHERE num = ${mysql.escape(rows[0].problem)};`);
+    res.redirect(`/submissions/${rows[0].problem}`)
+});
+
+app.get('/view/:num', async function (req, res) {
+    const [ rows, fields ] = await sql.query(`SELECT submitCnt, correctCnt FROM problems WHERE num = ${mysql.escape(req.params.num)}`);
+    if (rows.length == 0) return res.send('Not Found');
     const info = JSON.parse(await fs.readFile(`archive/${req.params.num}/info.json`));
     const content = await fs.readFile(`archive/${req.params.num}/description.md`);
     return res.render('problem', {
         num: req.params.num,
         info: info,
+        infoSql: rows[0],
         content: content.toString()
     });
 });
 
-app.get('/:num/submit', async function (req, res) {
+app.get('/submit/:num', async function (req, res) {
     if (!req.session.auth) return res.redirect('/signin');
     try {
         await fs.access(`archive/${req.params.num}`);
@@ -194,7 +220,7 @@ app.get('/:num/submit', async function (req, res) {
     });
 });
 
-app.get('/:num/submissions', async function (req, res) {
+app.get('/submissions/:num', async function (req, res) {
     try {
         await fs.access(`archive/${req.params.num}`);
     } catch (e) {
@@ -210,7 +236,7 @@ app.get('/:num/submissions', async function (req, res) {
     });
 });
 
-app.post('/:num/submit', async function (req, res) {
+app.post('/submit/:num', async function (req, res) {
     if (!req.session.auth) return res.redirect('/signin');
     try {
         await fs.access(`archive/${req.params.num}`);
@@ -226,8 +252,17 @@ app.post('/:num/submit', async function (req, res) {
         problem: req.params.num
     });
     await sql.query(`INSERT INTO submissions (id, user, problem) VALUES ('${id}', '${req.session.auth.user}', ${mysql.escape(req.params.num)})`);
+    await sql.query(`UPDATE problems SET submitCnt = submitCnt + 1 WHERE num = ${mysql.escape(req.params.num)};`);
     tryGrading();
     res.redirect(`/detail/${id}`);
+});
+
+app.get('/:num', function (req, res) {
+    return res.redirect(`/view/${req.params.num}`);
+})
+
+app.get('*', function (req, res) {
+    return res.send('Not Found');
 });
 
 function getResult(x) {
@@ -254,10 +289,6 @@ function getResult(x) {
     if (x == 'GD') return 'Marking';
     return 'Unknown';
 }
-
-app.get('*', function (req, res) {
-    return res.send('Not Found');
-});
 
 var port = 3000;
 http.listen(port, function (req, res) {
@@ -286,9 +317,13 @@ http.listen(port, function (req, res) {
             if (msg.data == 'updt') {
                 var done = 1;
                 if (msg.content.result.done !== undefined) done = msg.content.result.done;
-                await sql.query(`UPDATE submissions SET result = '${msg.content.result.result}' WHERE id = '${msg.content.id}'`);
-                if (msg.content.result.time !== undefined) await sql.query(`UPDATE submissions SET time = ${msg.content.result.time} WHERE id = '${msg.content.id}'`);
-                if (msg.content.result.mem !== undefined) await sql.query(`UPDATE submissions SET memory = ${msg.content.result.mem} WHERE id = '${msg.content.id}'`);
+                if (msg.content.result.result == 'AC') {
+                    const [ rows, fields ] = await sql.query(`SELECT result FROM submissions WHERE id = '${msg.content.id}';`);
+                    if (rows.length > 0 && rows[0].result !== 'AC') await sql.query(`UPDATE problems SET correctCnt = correctCnt + 1 WHERE num = ${mysql.escape(msg.content.problem)};`);
+                }
+                await sql.query(`UPDATE submissions SET result = '${msg.content.result.result}' WHERE id = '${msg.content.id}';`);
+                if (msg.content.result.time !== undefined) await sql.query(`UPDATE submissions SET time = ${msg.content.result.time} WHERE id = '${msg.content.id}';`);
+                if (msg.content.result.mem !== undefined) await sql.query(`UPDATE submissions SET memory = ${msg.content.result.mem} WHERE id = '${msg.content.id}';`);
                 if (idSockets[msg.content.id]) idSockets[msg.content.id].forEach(function (item, index, object) {
                     if (Date.now() - socketList[item].time > 24 * 60 * 60 * 1000) object.splice(index, 1);
                     io.to(item).emit('updt', {
@@ -301,7 +336,6 @@ http.listen(port, function (req, res) {
             }
         });
     }
-    // id, user, result, marks
     (async function () {
         sql = await mysql.createPool({
             host: '127.0.0.1',
@@ -311,12 +345,82 @@ http.listen(port, function (req, res) {
             waitForConnections: true,
             enableKeepAlive: true
         });
-        await sql.query('CREATE TABLE IF NOT EXISTS submissions (cnt INT UNIQUE NOT NULL AUTO_INCREMENT, id CHAR(64) PRIMARY KEY, user VARCHAR(100) NOT NULL, result VARCHAR(5), marks INT, problem VARCHAR(100) NOT NULL, time DOUBLE, memory DOUBLE, submitDate DATETIME DEFAULT CURRENT_TIMESTAMP);');
-        await sql.query('CREATE TABLE IF NOT EXISTS users (cnt INT UNIQUE NOT NULL AUTO_INCREMENT, user VARCHAR(100) PRIMARY KEY, password VARCHAR(100) NOT NULL, registerDate DATETIME DEFAULT CURRENT_TIMESTAMP, admin BOOLEAN NOT NULL DEFAULT 0);');
-        await sql.query('CREATE INDEX IF NOT EXISTS problemIndex ON submissions (problem);');
+        await sql.query('CREATE TABLE IF NOT EXISTS users (cnt INT UNIQUE NOT NULL AUTO_INCREMENT, user VARCHAR(100) PRIMARY KEY, password VARCHAR(100) NOT NULL, registerDate DATETIME DEFAULT CURRENT_TIMESTAMP, admin BOOLEAN NOT NULL DEFAULT FALSE);');
+        await sql.query('CREATE TABLE IF NOT EXISTS problems (title VARCHAR(100) NOT NULL, num VARCHAR(100) PRIMARY KEY, submitCnt INT NOT NULL DEFAULT 0, correctCnt INT NOT NULL Default 0, gradingStyle VARCHAR(100) NOT NULL Default \'ungradable\');');
+        await sql.query('CREATE TABLE IF NOT EXISTS redirections (num VARCHAR(100) PRIMARY KEY, href VARCHAR(100) NOT NULL);');
+        await sql.query('CREATE TABLE IF NOT EXISTS submissions (cnt INT UNIQUE NOT NULL AUTO_INCREMENT, id CHAR(64) PRIMARY KEY, user VARCHAR(100) NOT NULL, result VARCHAR(5), marks INT, problem VARCHAR(100) NOT NULL, time DOUBLE, memory DOUBLE, submitDate DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user) REFERENCES users(user), FOREIGN KEY (problem) REFERENCES problems(num));');
+        if ((await sql.query('SELECT COUNT(1) FROM INFORMATION_SCHEMA.STATISTICS WHERE table_schema=DATABASE() AND table_name=\'submissions\' AND index_name=\'problemIndex\''))[0][0]['COUNT(1)'] <= 0) await sql.query('CREATE INDEX problemIndex ON submissions (problem);');
+        await sql.query('CREATE TABLE IF NOT EXISTS histories (cnt INT UNIQUE NOT NULL AUTO_INCREMENT, problem VARCHAR(100) NOT NULL, user VARCHAR(100) NOT NULL, type CHAR(6) NOT NULL DEFAULT \'UNKNWN\', arg VARCHAR(100), date DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user) REFERENCES users(user), FOREIGN KEY (problem) REFERENCES problems(num));');
+        if ((await sql.query('SELECT COUNT(1) FROM INFORMATION_SCHEMA.STATISTICS WHERE table_schema=DATABASE() AND table_name=\'histories\' AND index_name=\'problemIndex\';'))[0][0]['COUNT(1)'] <= 0) await sql.query('CREATE INDEX problemIndex ON histories (problem);');
+        await loadProblems();
         console.log('SQL config done');
     })();
 })();
+
+async function loadProblems() {
+    const content = JSON.parse(await fs.readFile('archive/problems.json'));
+    for (num in content.problems) {
+        const problem = content.problems[num];
+        if ((await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(num)};`))[0][0]['COUNT(1)'] >= 1) {
+            await sql.query(`UPDATE problems SET title = '${problem.title}', gradingStyle = '${problem.gradingStyle}' WHERE num = ${mysql.escape(num)};`);
+        } else {
+            await sql.query(`INSERT INTO problems (num, title, gradingStyle) values (${mysql.escape(num)}, '${problem.title}', '${problem.gradingStyle}');`);
+        }
+        if ((await sql.query(`SELECT COUNT(1) FROM redirections WHERE num = ${mysql.escape(num)};`))[0][0]['COUNT(1)'] >= 1) {
+            await sql.query(`DELETE FROM redirections WHERE num = ${mysql.escape(num)};`);
+        }
+    }
+    for (num in content.redirections) {
+        const problem = content.redirections[num];
+        if ((await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(num)};`))[0][0]['COUNT(1)'] >= 1) {
+            await sql.query(`DELETE FROM problems WHERE num = ${mysql.escape(num)};`);
+        }
+        if ((await sql.query(`SELECT COUNT(1) FROM redirections WHERE num = ${mysql.escape(num)};`))[0][0]['COUNT(1)'] >= 1) {
+            await sql.query(`UPDATE redirections SET href = '${problem.redirect}' WHERE num = ${mysql.escape(num)};`);
+        } else {
+            await sql.query(`INSERT INTO redirections (num, href) values (${mysql.escape(num)}, '${problem.redirect}');`);
+        }
+    }
+}
+
+async function saveProblem(num, newProb) {
+    var content = JSON.parse(await fs.readFile('archive/problems.json'));
+    delete content.redirections[num];
+    content.problems[num] = newProb;
+    await fs.writeFile('archive/problems.json', JSON.stringify(content));
+    if ((await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(num)};`))[0][0]['COUNT(1)'] >= 1) {
+        await sql.query(`UPDATE problems SET title = '${newProb.title}', gradingStyle = '${newProb.gradingStyle}' WHERE num = ${mysql.escape(num)};`);
+    } else {
+        await sql.query(`INSERT INTO problems (num, title, gradingStyle) values (${mysql.escape(num)}, '${newProb.title}', '${newProb.gradingStyle}');`);
+    }
+    if ((await sql.query(`SELECT COUNT(1) FROM redirections WHERE num = ${mysql.escape(num)};`))[0][0]['COUNT(1)'] >= 1) {
+        await sql.query(`DELETE FROM redirections WHERE num = ${mysql.escape(num)};`);
+    }
+}
+
+async function saveRedirection(num, newRedr) {
+    var content = JSON.parse(await fs.readFile('archive/problems.json'));
+    delete content.problems[num];
+    content.redirections[num] = newRedr;
+    await fs.writeFile('archive/problems.json', JSON.stringify(content));
+    if ((await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(num)};`))[0][0]['COUNT(1)'] >= 1) {
+        await sql.query(`DELETE FROM problems WHERE num = ${mysql.escape(num)};`);
+    }
+    if ((await sql.query(`SELECT COUNT(1) FROM redirections WHERE num = ${mysql.escape(num)};`))[0][0]['COUNT(1)'] >= 1) {
+        await sql.query(`UPDATE redirections SET href = '${newRedr.redirect}' WHERE num = ${mysql.escape(num)};`);
+    } else {
+        await sql.query(`INSERT INTO redirections (num, href) values (${mysql.escape(num)}, '${newRedr.redirect}');`);
+    }
+}
+
+async function removeProblem(num) {
+    var content = JSON.parse(await fs.readFile('archive/problems.json'));
+    delete content.problems[num];
+    delete content.redirections[num];
+    await fs.writeFile('archive/problems.json', JSON.stringify(content));
+    await sql.query(`DELETE FROM problems WHERE num = ${mysql.escape(num)}`);
+    await sql.query(`DELETE FROM redirections WHERE num = ${mysql.escape(num)}`);
+}
 
 io.on('connection', function (socket) {
     socketList[socket.id] = {

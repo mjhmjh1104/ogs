@@ -13,12 +13,12 @@
 </head>
 <body>
     <h1><%= title %></h1>
-    <form method="POST" action="/<%= num %>/submit" accept-charse="utf-8">
+    <form method="POST" action="/submit/<%= num %>" accept-charse="utf-8">
         Language: C++20<br>
         Username: <%= user.user %><br>
         <textarea name="code"></textarea><br>
         <button type="submit">Submit</button>
     </form>
-    <a href="/<%= num %>">Back</a>
+    <a href="/view/<%= num %>">Back</a>
 </body>
 </html>

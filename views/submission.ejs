@@ -21,9 +21,13 @@
     Memory: <div id="mem" class="var"><%= submission.memory %></div> bytes<br>
     Result: <div id="result" class="var"><%= result %></div><br>
     Progress: <div id="prog" class="var">100%</div><br>
-
-    <a href="/<%= submission.problem %>">Problem</a>
-    <a href="/<%= submission.problem %>/submissions">List</a>
+<% if (user && (user.user === submission.user || user.admin)) { %>
+    <form method="POST" action="/detail/<%= submission.id %>/delete" accept-charse="utf-8">
+        <button type="submit">Remove</button> <% if (user.admin && user.user !== submission.user) { %> (as admin) <% } %>
+    </form>
+<% } %>
+    <a href="/view/<%= submission.problem %>">Problem</a>
+    <a href="/submissions/<%= submission.problem %>">List</a>
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="//code.jquery.com/jquery-1.12.4.min.js"></script>

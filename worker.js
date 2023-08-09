@@ -75,6 +75,7 @@ parentPort.on('message', async function (msg) {
             data: 'updt',
             content: {
                 id: msg.content.filename,
+                problem: msg.content.problem,
                 result: res
             }
         });
@@ -120,6 +121,7 @@ async function grade(submission) {
             result: 'RD',
             done: 0
         }, submission.filename);
+        await exec(`yes | rm -rf grading/isolate/${data.workerNum}/*`);
         await exec(`cp grading/compilers/c++20.sh grading/isolate/${data.workerNum}/compile.sh`);
         await exec(`cp grading/submissions/${submission.filename} grading/isolate/${data.workerNum}/submission.cpp`);
         await exec(`cp grading/checkers/diff.cpp grading/isolate/${data.workerNum}/checker.cpp`);
@@ -156,7 +158,8 @@ async function grade(submission) {
             done: 0
         }, submission.filename);
         await decompress(`archive/${submission.problem}/data.zip`, `grading/isolate/${data.workerNum}/archive`);
-        const info = JSON.parse(await fs.readFile(`grading/isolate/${data.workerNum}/archive/data/info.json`));
+        await exec(`cp archive/${submission.problem}/info.json grading/isolate/${data.workerNum}/archive/info.json`);
+        const info = JSON.parse(await fs.readFile(`grading/isolate/${data.workerNum}/archive/info.json`));
         tmpResult({
             result: 'GD',
             done: 0

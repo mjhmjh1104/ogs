@@ -12,11 +12,13 @@
 </head>
 <body>
 <h1><%= info.title %></h1>
+# submissions: <%= infoSql.submitCnt %><br>
+# acceptions: <%= infoSql.correctCnt %><br>
 Time limit: <%= info.tl / 1000 %> seconds<br>
 Memory limit: <%= info.ml / 1000000 %> MiB<br>
 <div class="description"><%= content %></div><br>
-<a href="/<%= num %>/submit">Submit</a>
-<a href="/<%= num %>/submissions">List</a>
+<a href="/submit/<%= num %>">Submit</a>
+<a href="/submissions/<%= num %>">List</a>
 <a href="/">Main</a>
 </body>
 </html>

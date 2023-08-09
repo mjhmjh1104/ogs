@@ -6,6 +6,7 @@
     <title>OGS</title>
 </head>
 <body>
+    <h1>Welcome to OGS</h1>
 <% if (!user) { %>
     <a href="/signin">Sign in</a>
 <% } else { %>
@@ -13,8 +14,27 @@
     <a href="/signout">Sign out</a>
 <% } %>
     <a href="/users">Users</a><br>
-    <% problems.forEach(function (item) { %>
-    <a href="/<%= item.num %>"><%= item.title %></a><br>
-    <% }); %>
+<% if (user && user.admin) { %> You are admin<br> <% } %>
+    <table>
+        <tr>
+            <td>#</td>
+            <td>Title</td>
+            <td>Grading Style</td>
+            <td># Submissions</td>
+            <td># Acceptions</td>
+        </tr>
+<% problems.forEach(function (item) { %>
+        <tr>
+            <td><%= item.num %></td>
+            <td><a href="/view/<%= item.num %>"><%= item.title %></a></td>
+            <td><%= item.gradingStyle %></td>
+            <td><%= item.submitCnt %></td>
+            <td><%= item.correctCnt %></td>
+        </tr>
+<% }); %>
+    </table>
+    
+    
+    
 </body>
 </html>
