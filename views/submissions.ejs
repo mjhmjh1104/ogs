@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title><%= title %></title>
+    <title>OGS</title>
     <style>
         .description {
             white-space: pre-wrap;
@@ -62,10 +62,11 @@
 </head>
 <body>
     <div class="container">
-        <h1><%= title %> submissions</h1>
+        <h1>Submissions</h1>
         <table>
             <tr>
                 <td>#</td>
+                <td>Problem</td>
                 <td>Author</td>
                 <td>Result</td>
                 <td>Date</td>
@@ -76,16 +77,17 @@
     <% submissions.forEach(function (item) { %>
             <tr>
                 <td><%= item.cnt %></td>
+                <td><a href="/view/<%= item.problem %>"><%= item.title %></a></td>
                 <td><%= item.user %></td>
                 <td><%= getResult(item.result) %></td>
                 <td><%= item.submitDate %></td>
                 <td><%= item.time %> ms</td>
-                <td><%= item.memory / 1024 %> kB</td>
+                <td><%= item.memory / 1024 %> kiB</td>
                 <td><a href="/detail/<%= item.id %>">#</a></td>
             </tr>
     <% }); %>
         </table>
-        <a href="/view/<%= num %>">Problem</a>
+        <a href="/">Main</a>
     </div>
 </body>
 </html>

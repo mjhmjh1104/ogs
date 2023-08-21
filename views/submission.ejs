@@ -19,10 +19,10 @@
     Submitted on <%= submission.submitDate %> by <%= submission.user %><br>
     Time: <div id="time" class="var"><%= submission.time %></div> milliseconds<br>
     Memory: <div id="mem" class="var"><%= submission.memory %></div> bytes<br>
-    Result: <div id="result" class="var"><%= result %></div><br>
+    Result: <div id="result" class="var"><%= getResult(submission.result) %></div><br>
     Progress: <div id="prog" class="var">100%</div><br>
 <% if (user && (user.user === submission.user || user.admin)) { %>
-    <form method="POST" action="/detail/<%= submission.id %>/delete" accept-charse="utf-8">
+    <form method="POST" action="/detail/<%= submission.id %>/delete" accept-charset="utf-8">
         <button type="submit">Remove</button> <% if (user.admin && user.user !== submission.user) { %> (as admin) <% } %>
     </form>
 <% } %>
@@ -34,7 +34,10 @@
     <script>
         var socket = io();
         socket.on('hello', function (data) {
-            socket.emit('id', '<%= submission.id %>');
+            socket.emit('id', {
+                id: '<%= submission.id %>',
+                type: '<%= submission.gradingStyle %>'
+            });
         });
         socket.on('updt', function (data) {
             $('#result').html(data.result);

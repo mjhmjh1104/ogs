@@ -1,0 +1,40 @@
+<h1>Create Problem</h1>
+    # <%= num %><br>
+    <form method="POST" action="/add" accept-charset="utf-8">
+        <input type="radio" name="type" value="problem" id="prob">Problem
+        <input type="radio" name="type" value="redirection" id="redr">Redirection
+        <div class="condition" id="followProb">
+            Title <input type="text" name="title"><br>
+            Description <textarea name="desc"></textarea><br>
+            Grading Style
+            <input type="radio" name="style" value="ungradable" id="ungd">Ungradable
+            <input type="radio" name="style" value="ioiSimple" id="ismp">Simple IOI
+            <div class="condition" id="followUngd">
+                <button type="submit">Submit</button>
+            </div>
+            <div class="condition" id="followIsmp">
+                Time Limit <input type="text" name="tl"> ms<br>
+                Wall Clock Limit <input type="text" name="wl"> ms<br>
+                Memory Limit <input type="text" name="ml"> bytes<br>
+                Checker
+                <input type="radio" name="checker" value="provided" id="ckpv">Provided
+                <input type="radio" name="checker" value="local" id="cklc">Upload<br>
+                <div class="condition" id="followCkpv">
+                    <select name="provided">
+<% checkers.forEach(function (item) { %>
+                        <option value="<%= item.file %>"><%= item.file %>.cpp - <%= item.description %></option>
+<% }); %>
+                    </select><br>
+                </div>
+                <div class="condition" id="followCklc">
+                    <textarea name="checker"></textarea><br>
+                </div>
+                Validator <textarea name="validator"></textarea><br>
+
+            </div>
+        </div>
+        <div class="condition" id="followRedr">
+            Connect to <input type="text" name="href"><br>
+            <button type="submit">Submit</button>
+        </div>
+    </form>

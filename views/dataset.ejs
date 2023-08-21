@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>OGS</title>
+    <style>
+        .condition {
+            display: none;
+        }
+        .uploadBox {
+            width: 500px;
+            height: 300px;
+            border: 1px solid black;
+            background: white;
+            overflow-y: scroll;
+            display: block;
+        }
+        .innerUpload {
+            width: 500px;
+            height: 300px;
+            text-align: center;
+            vertical-align: middle;
+            display: table-cell;
+        }
+        .innerContent {
+            display: inline-block;
+        }
+        .uploaded {
+            width: 100%;
+            height: 50px;
+            line-height: 50px;
+        }
+        .uploadedText {
+            width: calc(100% - 100px);
+            text-align: center;
+            display: inline-block;
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Add Dataset to <%= num %></h1>
+    <span id="error" style="color: red;"></span>
+    <form method="POST" action="/data/<%= num %>/add" accept-charset="utf-8" id="form" enctype="multipart/form-data">
+        <input type="hidden" name="edit" value="<%= data.edit ? data.edit : 'false' %>">
+        <input type="hidden" name="pidx" value="<%= data.pidx ? data.pidx : '' %>">
+        Name: <input type="text" name="desc" value="<%= data.desc %>"><br>
+        Files:
+        <div class="uploadBox">
+<% dataset.forEach(function (item, idx) { %>
+            <div class="uploaded">
+                <div class="uploadedText">(Server) <%= item %>.in / <%= item %>.out</div>
+                <input type="checkbox" name="<%= idx %>delete">Delete
+            </div>
+<% }); %>
+            <div class="innerUpload">
+                <div class="innerContent">
+                    <input type="file" id="file" multiple>
+                    <button type="button" onclick="buttonUpload();">Upload</button>
+                </div>
+            </div>
+        </div>
+    </form>
+    <button type="button" onclick="submit();">Submit</button>
+    <a href="/data/<%= num %>">Back</a>
+
+    <script src="//code.jquery.com/jquery-1.12.4.min.js"></script>
+    <script>
+        var box = $('.uploadBox'), uploads = [ ];
+        box.on('dragenter', function (e) {
+            e.stopPropagation();
+            e.preventDefault();
+            $(this).find('.innerUpload').hide();
+            $(this).css('background', 'linear-gradient(60deg, rgba(255, 165, 150, 0.5) 5%, rgba(0, 228, 255, 0.35))');
+        }).on('dragleave', function (e) {
+            e.stopPropagation();
+            e.preventDefault();
+            $(this).find('.innerUpload').show();
+            $(this).css('background', 'white');
+        }).on('dragover', function (e) {
+            e.stopPropagation();
+            e.preventDefault();
+        }).on('drop', function (e) {
+            e.stopPropagation();
+            e.preventDefault();
+            $(this).find('.innerUpload').show();
+            $(this).css('background', 'white');
+            objectUpload(e.originalEvent.dataTransfer.files);
+        });
+        function remove(x) {
+            uploads[x].disable = true;
+            $(`#row${x}`).hide();
+        }
+        function buttonUpload() {
+            objectUpload($('#file').get(0).files);
+            $('#file').val('');
+        }
+        function objectUpload(x) {
+            Array.from(x).forEach(function (item) {
+                isThisAFile(item).then(function (item) {
+                    $('.uploadBox .innerUpload:last').before(`<div class="uploaded" id="row${uploads.length}"><div class="uploadedText">(Client) <span>${item.name}</span></div>
+                    <button type="button" onclick="remove(${uploads.length});">Delete</div>`);
+                    uploads.push(item);
+                });
+            });
+        }
+        function submit() {
+            if (!$('#form input[name=desc]:eq(0)').val()) {
+                $('#error').html('Name empty');
+                return;
+            }
+            if ($('#form input[name=edit]:eq(0)') !== 'true') {
+<% if (datalt) datalt.forEach(function (item) { %>
+                if ($('#form inpu[name=desc]:eq(0)').val() === '<%= item %>') {
+                    $('#error').html('Name already exists');
+                    return;
+                }
+<% }); %>
+            }
+            var formData = new FormData ();
+            var k = 0;
+            uploads.forEach(function (item) {
+                if (uploads.disable !== true) {
+                    formData.append(`${k}files`, item);
+                    k++;
+                }
+            });
+            $('#form').serializeArray().forEach(function (item) {
+                formData.append(item.name, item.value);
+            });
+            $.ajax({
+                url: '/data/<%= num %>/add',
+                data: formData,
+                type: 'POST',
+                contentType: false,
+                processData: false,
+                success: function (data) {
+                    window.location.href = '/data/<%= num %>';
+                }
+            })
+        }
+
+
+        function isThisAFile(maybeFile) {
+            return new Promise(function (resolve, reject) {
+                if (maybeFile.type !== '') {
+                    return resolve(maybeFile)
+                }
+                const reader = new FileReader()
+                reader.onloadend = () => {
+                    if (
+                        reader.error &&
+                        (
+                            reader.error.name === 'NotFoundError' ||
+                            reader.error.name === 'NotReadableError'
+                        )) {
+                        return reject(reader.error.name)
+                    }
+                    resolve(maybeFile)
+                }
+                reader.readAsBinaryString(maybeFile)
+            });
+        }
+    </script>
+</body>
+</html>

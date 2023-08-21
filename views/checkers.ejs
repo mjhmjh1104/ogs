@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Checkers</title>
+</head>
+<body>
+    <h1>Checkers</h1>
+    <table>
+        <tr>
+            <td>Filename</td>
+            <td>Description</td>
+            <td>More</td>
+        </tr>
+<% checkers.forEach(function (item) { %>
+        <tr>
+            <td><%= item.file %>.cpp</td>
+            <td><%= item.description %></td>
+            <td><a href="/checkers/view/<%= item.file %>">#</a></td>
+        </tr>
+<% }); %>
+<% if (user && user.admin) { %>
+    <a href="/checkers/add"><button>Create</button></a>
+<% } %>
+    </table>
+    <a href="/">Main</a>
+</body>
+</html>

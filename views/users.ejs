@@ -19,9 +19,9 @@
             <td><%= item.cnt %></td>
             <td><%= item.user %></td>
             <td><%= item.registerDate %></td>
-            <td><% if (item.admin) { %>Admin<% } %><% if (user && user.admin) { %><form method="POST" action="/users/<%= item.user %>/admin" accept-charse="utf-8">
+            <td><% if (item.admin) { %>Admin<% } %><% if (user && user.admin) { %><form method="POST" action="/users/<%= item.user %>/admin" accept-charset="utf-8">
                 <button type="submit">Make admin</button>
-            </form><form method="POST" action="/users/<%= item.user %>/delete" accept-charse="utf-8">
+            </form><form method="POST" action="/users/<%= item.user %>/delete" accept-charset="utf-8">
                 <button type="submit">Remove</button>
             </form><% } %></td>
         </tr>

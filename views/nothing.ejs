@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>OGS</title>
+    <style>
+        .description {
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    Nothing here<br>
+    <a href="/">Main</a>
+<% if (user && user.admin) { %>
+    <a href="/history/<%= num %>">History</a>
+    <a href="/add/<%= num %>"><button>Create</button></a>
+<% } %>
+</body>
+</html>

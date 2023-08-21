@@ -9,16 +9,28 @@
             width: 700px;
             height: 300px;
         }
+        code {
+            white-space: pre-wrap;
+        }
     </style>
 </head>
 <body>
     <h1><%= title %></h1>
-    <form method="POST" action="/submit/<%= num %>" accept-charse="utf-8">
+    <form method="POST" action="/submit/<%= num %>" accept-charset="utf-8" id="submit" enctype="multipart/form-data">
         Language: C++20<br>
         Username: <%= user.user %><br>
-        <textarea name="code"></textarea><br>
-        <button type="submit">Submit</button>
+<% if (error) { %><span style="color: red;"><%= error %></span><% } %>
+<% if (stderr) { %><code style="color: red;"><%= stderr %></code><% } %>
+<% if (message) { %><span style="color: blue;"><%= error %></span><% } %>
+        <textarea name="code" <% if (error) { %>readonly<% } %>><%= code %></textarea><br>
     </form>
+    <form method="POST" action="/submit/<%= num %>/retry" accept-charset="utf-8" id="retry"></form>
+<% if (error) { %>
+        <button type="submit" form="submit">Submit</button>
+        <button type="submit" form="retry">Edit</button>
+<% } else { %>
+        <button type="submit" form="submit">Submit</button>
+<% } %>
     <a href="/view/<%= num %>">Back</a>
 </body>
 </html>

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>OGS</title>
+    <style>
+        .condition {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Create Problem</h1>
+    # <%= num %><br>
+    <form method="POST" action="/add/<%= num %>" accept-charset="utf-8">
+<% if (error) { %><span style="color: red;"><%= error %></span><br><% } %>
+        <input type="radio" name="type" value="problem" id="prob" <% if (data.type === 'problem') { %>checked<% } %>>Problem
+        <input type="radio" name="type" value="redirection" id="redr" <% if (data.type === 'redirection') { %>checked<% } %>>Redirection
+        <div class="condition" id="followProb" <% if (data.type === 'problem') { %>style="display: block;"<% } %>>
+            Title <input type="text" name="title" value="<%= data.title %>"><br>
+            <button type="submit">Submit</button>
+        </div>
+        <div class="condition" id="followRedr" <% if (data.type === 'redirection') { %>style="display: block;"<% } %>>
+            Connect to <input type="text" name="href" value="<%= data.href %>"><br>
+            <button type="submit">Submit</button>
+        </div>
+    </form>
+
+    <script src="//code.jquery.com/jquery-1.12.4.min.js"></script>
+    <script>
+        function hideType() {
+            $('#followProb').hide();
+            $('#followRedr').hide();
+        }
+        $('#prob').change(function () {
+            hideType();
+            $('#followProb').show();
+        });
+        $('#redr').change(function () {
+            hideType();
+            $('#followRedr').show();
+        });
+        function hideStyle() {
+            $('#followUngd').hide();
+            $('#followIsmp').hide();
+        }
+        $('#ungd').change(function () {
+            hideStyle();
+            $('#followUngd').show();
+        });
+        $('#ismp').change(function () {
+            hideStyle();
+            $('#followIsmp').show();
+        });
+        function hideChecker() {
+            $('#followCkpv').hide();
+            $('#followCklc').hide();
+        }
+        $('#ckpv').change(function () {
+            hideChecker();
+            $('#followCkpv').show();
+        });
+        $('#cklc').change(function () {
+            hideChecker();
+            $('#followCklc').show();
+        })
+    </script>
+</body>
+</html>

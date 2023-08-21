@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>OGS</title>
+</head>
+<body>
+    <h1>Helpers of <%= num %></h1>
+    <form method="POST" action="/helper/<%= num %>/delete" accept-charset="utf-8">
+        <select name="helper">
+<% (helper ? helper : []).forEach(function (item, idx) { %>
+            <option value="<%= item %>" <% if (idx == 0) { %>selected<% } %>><%= item %></option>
+<% }); %>
+        </select>
+        <% if (helper && helper.length > 0) { %><button type="submit">Delete</button><% } %>
+    </form>
+    <form method="POST" action="/helper/<%= num %>" accept-charset="utf-8" enctype="multipart/form-data">
+        <input type="file" name="upload"> as <input type="text" name="name">
+        <button type="submit">Upload</button>
+    </form>
+    <a href="/view/<%= num %>">Back</a>
+</body>
+</html>

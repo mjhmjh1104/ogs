@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Add Checker</title>
+    <style>
+        code {
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <h1>Add Checker</h1>
+    <form method="POST" action="/checkers/add" accept-charset="utf-8" id="form" enctype="multipart/form-data">
+<% if (error) { %><span style="color: red;"><%= error %></span><br><% } %>
+<% if (stderr) { %><code style="color: red;"><%= stderr %></code><% } %>
+<% if (message) { %><span style="color: blue;"><%= message %></span><br><% } %>
+        Filename <input type="text" name="file" value="<%= data.file %>" <% if (message === 'Compiling...') { %>readonly<% } %>>.cpp<br>
+        Description <input type="text" name="description" value="<%= data.description %>" <% if (message === 'Compiling...') { %>readonly<% } %>><br>
+        Code <textarea name="code" <% if (message === 'Compiling...') { %>readonly<% } %>><%= data.code %></textarea><br>
+        <input type="hidden" name="out" value="<% if (message === 'Compiling...') { %><%= out %><% } %>">
+<% if (message !== 'Compiling...') { %><button type="submit">Submit</button><% } %>
+    </form>
+    <a href="/checkers">Back</a>
+<% if (message === 'Compiling...') { %>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="//code.jquery.com/jquery-1.12.4.min.js"></script>
+    <script>
+        var socket = io();
+        socket.on('hello', function (data) {
+            socket.emit('id', {
+                id: '<%= data.file %>',
+                type: 'checker',
+                description: '<%= data.description %>',
+                out: '<%= out %>'
+            });
+            setTimeout(function () {
+                $("#form").submit();
+            }, 20000);
+        });
+        socket.on('updt', function (data) {
+            if (data.result === 'AC') window.location.href = '/checkers';
+            else $("#form").submit();
+        });
+    </script>
+<% } %>
+</body>
+</html>

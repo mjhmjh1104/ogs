@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="//code.jquery.com/jquery-1.12.4.min.js"></script>
+    <title>OGS</title>
+    <style>
+        .description {
+            white-space: pre-wrap;
+        }
+        iframe {
+            width: 800px;
+            height: 1000px;
+        }
+        *:not(.MJX-TEX *) {
+            font-family: sans-serif;
+            color: #333;
+        }
+        *, p, ul, ol, li {
+            margin: 0;
+            margin-block: 0;
+        }
+        p {
+            line-height: 30px;
+        }
+        li {
+            margin-top: -5px;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+        th, td {
+            border: 1px #888 solid;
+            padding: 12px 15px;
+        }
+        .container {
+            margin: 100px auto;
+            width: 850px;
+        }
+        h1, h2, h3, h4, h5, h6 {
+            border-bottom: 1px #ccc solid;
+            margin-bottom: 15px;
+        }
+        code, .code {
+            border: 1px #aaa solid;
+            padding: 5px 10px;
+            background-color: #eee;
+            font-family: 'Menlo', 'Consolas', Arial, sans-serif !important;
+        }
+        code {
+            display: inline-block;
+            line-height: normal;
+        }
+        .code {
+            display: block;
+        }
+        .code * {
+            font-family: 'Menlo', 'Consolas', Arial, sans-serif !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Examples of <%= num %></h1>
+        <form method="POST" action="/examples/<%= num %>" accept-charset="utf-8" enctype="multipart/form-data">
+            <table id="examples">
+                <tr>
+                    <th>#</th>
+                    <th>Input</th>
+                    <th>Output</th>
+                    <th>Description</th>
+                    <th>Functions</th>
+                </tr>
+<% examples.forEach(function (item, idx) { %>
+                <tr>
+                    <td><textarea><%= idx + 1 %></textarea></td>
+                    <td><textarea><%= item.input %></textarea></td>
+                    <td><textarea><%= item.output %></textarea></td>
+                    <td><textarea><%= item.desc %></textarea></td>
+                    <td>Enabled <input type="checkbox" <% if (item.enabled) { %>checked<% } %>> Used <input type="checkbox" <% if (item.use) { %>checked<% } %>><button type="button">Delete</button></td>
+                </tr>
+<% }); %>
+            </table>
+            <button type="button" onclick="add();">Add</button>
+            <button type="submit">Apply</button>
+        </form>
+        <a href="/view/<%= num %>">Back</a>
+    </div>
+
+    <script>
+        function swap(x, y) {
+            var sib = y.nextSibling === x ? y : y.nextSibling;
+            x.parentNode.insertBefore(y, x);
+            y.parentNode.insertBefore(x, sib);
+            reenumerate();
+        }
+        function reenumerate() {
+            var len = $('#examples tr:gt(0)').length;
+            $('#examples tr:gt(0)').each(function (idx) {
+                $(this).find('td:eq(0)').html(idx + 1);
+                $(this).find('td:eq(1) textarea').attr('name', idx + 'input');
+                $(this).find('td:eq(2) textarea').attr('name', idx + 'output');
+                $(this).find('td:eq(3) textarea').attr('name', idx + 'desc');
+                $(this).find('td:eq(4) input:eq(0)').attr('name', idx + 'enabled');
+                $(this).find('td:eq(4) input:eq(1)').attr('name', idx + 'use');
+                $(this).find('td:eq(4) button:eq(0)').off('click');
+                $(this).find('td:eq(4) button:eq(0)').click(function () {
+                    $(`#examples tr:gt(0):eq(${idx})`).remove();
+                    reenumerate();
+                });
+                $(this).find('td:eq(4) button:gt(0)').remove();
+                if (idx > 0) $(this).find('td:eq(4)').append(`<button type="button" onclick="swap($(\'#examples tr:gt(0):eq(${idx})\').get(0), $(\'#examples tr:gt(0):eq(${idx - 1})\').get(0))">Up</button>`);
+                if (idx < len - 1) $(this).find('td:eq(4)').append(`<button type="button" onclick="swap($(\'#examples tr:gt(0):eq(${idx})\').get(0), $(\'#examples tr:gt(0):eq(${idx + 1})\').get(0))">Down</button>`);
+            });
+        }
+        function add() {
+            $('#examples tr:last').after('<tr><td>0</td><td><textarea></textarea></td><td><textarea></textarea></td><td><textarea></textarea></td><td>Enabled <input type="checkbox" checked> Used <input type="checkbox" checked><button type="button">Delete</button></td></tr>');
+            reenumerate();
+        }
+        reenumerate();
+    </script>
+</body>
+</html>

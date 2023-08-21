@@ -5,19 +5,26 @@ const http = require('http').Server(app);
 const path = require('path');
 const bodyParser = require('body-parser');
 const { Worker } = require('worker_threads');
-const fs = require('fs').promises;
+const fsStream = require('fs');
+const fs = fsStream.promises;
 const crypto = require('crypto');
 const mysql = require('mysql2/promise');
 const { sqlpw, sessSecret, salt } = require('./config.json');
 const io = require('socket.io')(http);
 const cookieParser = require('cookie-parser');
 const bcrypt = require('bcrypt');
+const util = require('util');
+const exec = util.promisify(require('child_process').exec);
+const fileUpload = require("express-fileupload");
+const decompress = require('decompress');
+const archiver = require('archiver');
 
 var sql = null;
 
 // List of connected auto-refreshing pages
 var socketList = { };
 var idSockets = { };
+var checkerSocket = { };
 
 // Queue storing submission IDs
 var queue = [ ];
@@ -51,18 +58,46 @@ function tryGrading() {
     // No free worker
 }
 
+function inappropriate(x) {
+    return x.includes('"') || x.includes('/') || x === '.' || x === '..';
+}
+
+async function mkdir(path) {
+    try {
+        await fs.access(path);
+    } catch (e) {
+        await fs.mkdir(path, {
+            recursive: true
+        });
+    }
+}
+
+async function upload(file, path) {
+    await new Promise(function (resolve, reject) {
+        file.mv(path, function (err) {
+            if (err) throw new Error ('File upload failed');
+            resolve();
+        });
+    });
+}
+
 app.set('view engine', 'ejs');
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({
     extended: true
 }));
+app.use(express.json());
+app.use(fileUpload({
+    createParentPath: true
+}));
+
 app.use(session({
     key: 'auth',
     secret: sessSecret,
     resave: false,
     saveUninitialized: true,
     cookie: {
-        expires: 60 * 60 * 24 * 7
+        expires: 1000 * 60 * 60 * 24 * 7
     }
 }));
 app.use(cookieParser());
@@ -143,7 +178,7 @@ app.post('/register', async function (req, res) {
         });
     }
     const hashedPassword = await bcrypt.hash(req.body.password, salt);
-    await sql.query(`INSERT INTO users (user, password) VALUES (${mysql.escape(req.body.user)}, '${hashedPassword}')`);
+    await sql.query(`INSERT INTO users (user, password) VALUES (${mysql.escape(req.body.user)}, ${mysql.escape(hashedPassword)})`);
     res.redirect('/signin');
 });
 
@@ -170,20 +205,20 @@ app.post('/users/:id/delete', async function (req, res) {
 });
 
 app.get('/detail/:id', async function (req, res) {
-    const [ rows, fields ] = await sql.query(`SELECT cnt, id, user, result, problem, time, memory, submitDate FROM submissions WHERE id = ${mysql.escape(req.params.id)};`);
-    if (rows.length == 0) return res.send('Not Found');
+    const [ rows, fields ] = await sql.query(`SELECT cnt, id, user, result, problem, time, memory, submitDate, gradingStyle FROM submissions LEFT JOIN problems ON submissions.problem = problems.num WHERE id = ${mysql.escape(req.params.id)};`);
+    if (rows.length <= 0) return res.send('Not Found');
     const code = await fs.readFile(`grading/submissions/${req.params.id}`);
     return res.render('submission', {
         code: code.toString(),
         submission: rows[0],
-        result: getResult(rows[0].result),
-        user: req.session.auth
+        user: req.session.auth,
+        getResult: getResult
     });
 });
 
 app.post('/detail/:id/delete', async function (req, res) {
     const [ rows, fields ] = await sql.query(`SELECT user, result, problem FROM submissions WHERE id = ${mysql.escape(req.params.id)};`);
-    if (rows.length == 0) return res.send('Not Found');
+    if (rows.length <= 0) return res.send('Not Found');
     if (!req.session.auth) return res.redirect(`/detail/${req.params.id}`);
     if (!req.session.auth.admin && req.session.auth.user !== rows[0].user) return req.redirect(`/detail/${req.params.id}`);
     await sql.query(`DELETE FROM submissions WHERE id = ${mysql.escape(req.params.id)};`);
@@ -193,76 +228,1324 @@ app.post('/detail/:id/delete', async function (req, res) {
 });
 
 app.get('/view/:num', async function (req, res) {
-    const [ rows, fields ] = await sql.query(`SELECT submitCnt, correctCnt FROM problems WHERE num = ${mysql.escape(req.params.num)}`);
-    if (rows.length == 0) return res.send('Not Found');
-    const info = JSON.parse(await fs.readFile(`archive/${req.params.num}/info.json`));
-    const content = await fs.readFile(`archive/${req.params.num}/description.md`);
+    var num = req.params.num;
+    var redr = '';
+    const [ rows2, fields2 ] = await sql.query(`SELECT href FROM redirections WHERE num = ${mysql.escape(req.params.num)}`);
+    if (rows2.length > 0) {
+        num = rows2[0].href;
+        redr = req.params.num;
+    }
+    const [ rows, fields ] = await sql.query(`SELECT submitCnt, correctCnt FROM problems WHERE num = ${mysql.escape(num)}`);
+    if (rows.length <= 0) return res.render('nothing', {
+        num: num,
+        user: req.session.auth
+    });
+    const info = JSON.parse(await fs.readFile(`archive/${num}/info.json`));
+    var examples = [ ];
+    try {
+        examples = JSON.parse(await fs.readFile(`archive/${num}/examples.json`));
+    } catch (e) { }
+    var contents = [ ];
+    for (idx in info.versions) {
+        const obj = info.versions[idx];
+        if (obj.type === 'md') {
+            var content = (await fs.readFile(`archive/${num}/descriptions/${obj.filename}`)).toString();
+            var title = info.title;
+            const matches = [ ...content.matchAll('\\[\\[title:.*\\]\\]') ];
+            if (matches.length > 0) {
+                title = matches[0].toString().substr(2, matches[0].toString().length - 4).split(':')[1];
+                content = content.replace(matches[0].toString(), '');
+            }
+            contents.push({
+                content: replaceExamples(content, examples),
+                type: obj.type,
+                lang: obj.lang,
+                name: obj.name,
+                title: title
+            });
+        } else if (obj.type === 'pdf') {
+            contents.push({
+                content: obj.path,
+                type: obj.type,
+                lang: obj.lang,
+                name: obj.name,
+                title: info.title
+            });
+        }
+    }
     return res.render('problem', {
-        num: req.params.num,
+        redr: redr,
+        num: num,
         info: info,
         infoSql: rows[0],
-        content: content.toString()
-    });
-});
-
-app.get('/submit/:num', async function (req, res) {
-    if (!req.session.auth) return res.redirect('/signin');
-    try {
-        await fs.access(`archive/${req.params.num}`);
-    } catch (e) {
-        return res.send('Not Found');
-    }
-    const title = JSON.parse(await fs.readFile(`archive/${req.params.num}/info.json`)).title;
-    return res.render('submit', {
-        num: req.params.num,
-        title: title,
+        contents: contents,
         user: req.session.auth
     });
 });
 
-app.get('/submissions/:num', async function (req, res) {
-    try {
-        await fs.access(`archive/${req.params.num}`);
-    } catch (e) {
+app.get('/add/:num', async function (req, res) {
+    if (!req.session.auth) return res.redirect(`/view/${req.params.num}`);
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)}`);
+    if (rows[0]['COUNT(1)'] > 0) return res.redirect(`/view/${req.params.num}`);
+    const [ rows2, fields2 ] = await sql.query(`SELECT COUNT(1) FROM redirections WHERE num = ${mysql.escape(req.params.num)}`);
+    if (rows2[0]['COUNT(1)'] > 0) return res.redirect(`/view/${req.params.num}`);
+    if (inappropriate(req.params.num)) return res.redirect('/');
+    res.render('add', {
+        error: '',
+        num: req.params.num,
+        data: {}
+    });
+});
+
+app.post('/add/:num', async function (req, res) {
+    if (!req.session.auth) return res.redirect(`/view/${req.params.num}`);
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)}`);
+    if (rows[0]['COUNT(1)'] > 0) return res.redirect(`/view/${req.params.num}`);
+    if (inappropriate(req.params.num)) return res.redirect('/');
+    if (req.body.type === 'problem') {
+        if (!req.body.title) return res.render('add', {
+            error: 'Title is empty',
+            num: req.params.num,
+            data: req.body
+        });
+        await sql.query(`INSERT INTO problems (num, title, gradingStyle) VALUES (${mysql.escape(req.params.num)}, ${mysql.escape(req.body.title)}, 'ungradable');`);
+        await saveProblem(req.params.num, {
+            title: req.body.title,
+            gradingStyle: 'ungradable'
+        });
+        await exec(`mkdir "archive/${req.params.num}"`);
+        await exec(`touch "archive/${req.params.num}/description.md"`);
+        await fs.writeFile(`archive/${req.params.num}/info.json`, JSON.stringify({
+            title: req.body.title,
+            gradingStyle: 'ungradable',
+            providing: [ ]
+        }));
+        await addHistory(req.params.num, req.session.auth.user, 'CRTPRB', null, {
+            before: { },
+            after: {
+                type: 'problem',
+                info: {
+                    title: req.body.title,
+                    providing: [ ]
+                }
+            }
+        });
+        await addHistory(req.params.num, req.session.auth.user, 'EDTGST', 'ungradable', {
+            before: { },
+            after: {
+                info: {
+                    gradingStyle: 'ungradable'
+                }
+            }
+        });
+        return res.redirect(`/view/${req.params.num}`);
+    } else if (req.body.type === 'redirection') {
+        if (inappropriate(req.body.href)) return res.render('add', {
+            error: 'Href is prohibited',
+            num: req.params.num,
+            data: req.body
+        });
+        if (!req.body.href) return res.render('add', {
+            error: 'Href is empty',
+            num: req.params.num,
+            data: req.body
+        });
+        await sql.query(`INSERT INTO redirections (num, href) VALUES (${mysql.escape(req.params.num)}, ${mysql.escape(req.body.href)});`);
+        await saveRedirection(req.params.num, {
+            href: req.body.href
+        });
+        await addHistory(req.params.num, req.session.auth.user, 'CRTRDR', req.body.href, {
+            before: { },
+            after: {
+                type: 'redirection',
+                info: {
+                    href: req.body.href
+                }
+            }
+        });
+        return res.redirect('/redirections');
+    } else return res.render('add', {
+        error: 'Choose problem type',
+        num: req.params.num,
+        data: req.body
+    });
+});
+
+app.get('/edit/:num', async function (req, res) {
+
+    //const [ rows, fields ] = await sql.query(`SELECT file, description FROM checkers`);
+});
+
+app.post('/delete/:num', async function (req, res) {
+    if (!req.session.auth) return res.redirect(`/view/${req.params.num}`);
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.send('Not Found');
+    await sql.query(`DELETE FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    await removeProblem(req.params.num);
+    await exec(`mv "archive/${req.params.num}" "archive/${genID()}"`);
+    await addHistory(req.params.num, req.session.auth.user, 'RMVPRB', null, {
+        before: {
+            type: 'problem'
+        },
+        after: { }
+    });
+    res.redirect('/');
+});
+
+app.get('/submit/:num', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    const [ rows, fields ] = await sql.query(`SELECT title, gradingStyle FROM problems WHERE num=${mysql.escape(req.params.num)};`);
+    if (rows.length <= 0) {
+        const [ rows2, fields2 ] = await sql.query(`SELECT href FROM redirections WHERE num = ${mysql.escape(req.params.num)};`);
+        if (rows2.length > 0) return res.redirect(`/submit/${rows2[0].href}`);
         return res.send('Not Found');
     }
-    const title = JSON.parse(await fs.readFile(`archive/${req.params.num}/info.json`)).title;
-    const [ rows, fields ] = await sql.query(`SELECT cnt, id, user, result, problem, time, memory, submitDate FROM submissions WHERE problem = ${mysql.escape(req.params.num)} ORDER BY cnt DESC;`);
-    return res.render('list', {
-        title: title,
+    if (rows[0].gradingStyle === 'ungradable') return res.redirect(`/view/${req.params.num}`);
+    return res.render('submit', {
+        error: '',
+        stderr: '',
+        message: '',
+        code: '',
         num: req.params.num,
+        title: rows[0].title,
+        user: req.session.auth
+    });
+});
+
+app.get('/submissions', async function (req, res) {
+    const [ rows, fields ] = await sql.query(`SELECT cnt, id, user, result, problem, time, memory, submitDate, title FROM submissions LEFT JOIN problems ON submissions.problem = problems.num ORDER BY cnt DESC;`);
+    return res.render('submissions', {
         submissions: rows,
+        getResult: getResult
+    });
+})
+
+app.get('/submissions/:num', async function (req, res) {
+    const [ rows, fields ] = await sql.query(`SELECT title FROM problems WHERE num=${mysql.escape(req.params.num)};`);
+    if (rows.length <= 0) {
+        const [ rows2, fields2 ] = await sql.query(`SELECT href FROM redirections WHERE num = ${mysql.escape(req.params.num)}`);
+        if (rows2.length > 0) return res.redirect(`/submissions/${rows2[0].href}`);
+        return res.send('Not Found');
+    }
+    const [ rows2, fields2 ] = await sql.query(`SELECT cnt, id, user, result, problem, time, memory, submitDate FROM submissions WHERE problem = ${mysql.escape(req.params.num)} ORDER BY cnt DESC LIMIT 20;`);
+    return res.render('list', {
+        title: rows[0].title,
+        num: req.params.num,
+        submissions: rows2,
         getResult: getResult
     });
 });
 
 app.post('/submit/:num', async function (req, res) {
     if (!req.session.auth) return res.redirect('/signin');
-    try {
-        await fs.access(`archive/${req.params.num}`);
-    } catch (e) {
-        return res.send('Not Found');
-    }
+    const [ rows, fields ] = await sql.query(`SELECT gradingStyle FROM problems WHERE num=${mysql.escape(req.params.num)};`);
+    if (rows.length <= 0) return res.send('Not Found');
+    if (rows[0].gradingStyle === 'ungradable') return res.redirect(`/view/${req.params.num}`);
     const id = genID();
     await fs.writeFile(`grading/submissions/${id}`, req.body.code);
     queue.push({
+        type: rows[0].gradingStyle,
         filename: id,
         time: Date.now(),
         user: req.session.auth.user,
         problem: req.params.num
     });
-    await sql.query(`INSERT INTO submissions (id, user, problem) VALUES ('${id}', '${req.session.auth.user}', ${mysql.escape(req.params.num)})`);
+    await sql.query(`INSERT INTO submissions (id, user, problem) VALUES (${mysql.escape(id)}, ${mysql.escape(req.session.auth.user)}, ${mysql.escape(req.params.num)})`);
     await sql.query(`UPDATE problems SET submitCnt = submitCnt + 1 WHERE num = ${mysql.escape(req.params.num)};`);
     tryGrading();
     res.redirect(`/detail/${id}`);
 });
 
-app.get('/:num', function (req, res) {
-    return res.redirect(`/view/${req.params.num}`);
+app.get('/checkers', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect('/');
+    const [ rows, fields ] = await sql.query(`SELECT file, description FROM checkers;`);
+    res.render('checkers', {
+        checkers: rows,
+        user: req.session.auth
+    });
+});
+
+app.get('/checkers/view/:file', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect('/');
+    const [ rows, fields ] = await sql.query(`SELECT file, description FROM checkers WHERE file = ${mysql.escape(req.params.file)};`);
+    if (rows.length <= 0) return res.send('Not Found');
+    const code = await fs.readFile(`grading/checkers/${req.params.file}.cpp`);
+    res.render('checker', {
+        checker: rows[0],
+        code: code.toString(),
+        user: req.session.auth
+    });
+});
+
+app.get('/checkers/add', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect('/');
+    res.render('checkerAdd', {
+        error: '',
+        stderr: '',
+        message: '',
+        data: {},
+        out: ''
+    });
+});
+
+app.post('/checkers/add', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect('/');
+    if (req.body.out && !inappropriate(req.body.out)) {
+        var message = '';
+        try {
+            message = await fs.readFile(`grading/messages/${req.body.out}`);
+        } catch (e) { }
+        return res.render('checkerAdd', {
+            error: 'Compilation failed',
+            stderr: message,
+            message: '',
+            data: req.body,
+            out: ''
+        });
+    }
+    if (inappropriate(req.body.file)) return res.render('checkerAdd', {
+        error: 'Filename is prohibited',
+        stderr: '',
+        message: '',
+        data: req.body,
+        out: ''
+    });
+    if (req.body.file.length <= 0) return res.render('checkerAdd', {
+        error: 'Filename is empty',
+        stderr: '',
+        message: '',
+        data: req.body,
+        out: ''
+    });
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM checkers WHERE file = ${mysql.escape(req.body.file)}`);
+    if (rows[0]['COUNT(1)'] > 0) return res.render('checkerAdd', {
+        error: 'File already exists',
+        stderr: '',
+        message: '',
+        data: req.body,
+        out: ''
+    });
+    await fs.writeFile(`grading/checkers/${req.body.file}.cpp`, req.body.code);
+    const id = genID();
+    queue.push({
+        type: 'checker',
+        filename: req.body.file,
+        description: req.body.description,
+        out: id
+    });
+    tryGrading();
+    return res.render('checkerAdd', {
+        error: '',
+        stderr: '',
+        message: 'Compiling...',
+        data: req.body,
+        out: id
+    });
+});
+
+app.post('/checkers/delete/:file', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect('/');
+    if (inappropriate(req.params.file)) return res.redirect(`/checkers`);
+    await sql.query(`DELETE FROM checkers WHERE file = ${mysql.escape(req.params.file)};`);
+    await exec(`yes | rm -rf "grading/checkers/${req.params.file}.cpp"`);
+    await removeChecker(req.params.file);
+    res.redirect('/checkers');
+});
+
+app.get('/redirections', async function (req, res) {
+    const [ rows, fields ] = await sql.query(`SELECT num, href FROM redirections;`);
+    res.render('redirections', {
+        redirections: rows,
+        user: req.session.auth
+    });
+});
+
+app.post('/redirections/:num/delete', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    await sql.query(`DELETE FROM redirections WHERE num = ${mysql.escape(req.params.num)};`);
+    await removeProblem(req.params.num);
+    await addHistory(req.params.num, req.session.auth.user, 'RMVRDR', null, {
+        before: {
+            type: 'redirection'
+        },
+        after: { }
+    });
+    res.redirect('/redirections');
+});
+
+app.get('/history/:num', async function (req, res) {
+    const [ rows, fields ] = await sql.query(`SELECT cnt, problem, user, type, arg, date FROM histories WHERE problem = ${mysql.escape(req.params.num)} ORDER BY cnt DESC;`);
+    res.render('history', {
+        num: req.params.num,
+        history: rows,
+        getHistory: getHistory
+    });
+});
+
+app.get('/description/:num', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+    const info = JSON.parse(await fs.readFile(`archive/${req.params.num}/info.json`));
+    res.render('descriptions', {
+        num: req.params.num,
+        descriptions: info.versions
+    });
+});
+
+app.get('/solution/:num', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+    const info = JSON.parse(await fs.readFile(`archive/${req.params.num}/info.json`));
+    res.render('solutions', {
+        num: req.params.num,
+        solutions: info.solutions
+    });
+});
+
+app.get('/description/:num/add', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+    const info = JSON.parse(await fs.readFile(`archive/${req.params.num}/info.json`));
+    res.render('description', {
+        error: '',
+        data: { },
+        num: req.params.num,
+        providing: info.providing
+    });
+});
+
+app.get('/solution/:num/add', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+    const info = JSON.parse(await fs.readFile(`archive/${req.params.num}/info.json`));
+    res.render('solution', {
+        error: '',
+        data: { },
+        num: req.params.num,
+        providing: info.providing
+    });
+});
+
+app.get('/description/:num/edit/:idx', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+    const info = JSON.parse(await fs.readFile(`archive/${req.params.num}/info.json`));
+    if (parseInt(req.params.idx) != req.params.idx) return res.redirect(`/description/${req.params.num}`);
+    if (info.versions.length <= req.params.idx || req.params.idx < 0) return res.redirect(`/description/${req.params.num}`);
+    if (info.versions[req.params.idx].type === 'md') res.render('description', {
+        error: '',
+        data: {
+            edit: 'true',
+            pidx: req.params.idx,
+            lang: info.versions[req.params.idx].lang,
+            desc: info.versions[req.params.idx].name,
+            type: 'md',
+            md: await fs.readFile(`archive/${req.params.num}/descriptions/${info.versions[req.params.idx].filename}`),
+            file: info.versions[req.params.idx].filename
+        },
+        num: req.params.num,
+        providing: info.providing
+    });
+    else if (info.versions[req.params.idx].type === 'pdf') res.render('description', {
+        error: '',
+        data: {
+            edit: 'true',
+            pidx: req.params.idx,
+            lang: info.versions[req.params.idx].lang,
+            desc: info.versions[req.params.idx].name,
+            type: 'pdf',
+            pdf: info.versions[req.params.idx].path
+        },
+        num: req.params.num,
+        providing: info.providing
+    });
+});
+
+app.get('/solution/:num/edit/:idx', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+    const info = JSON.parse(await fs.readFile(`archive/${req.params.num}/info.json`));
+    if (parseInt(req.params.idx) != req.params.idx) return res.redirect(`/solution/${req.params.num}`);
+    if (info.solutions.length <= req.params.idx || req.params.idx < 0) return res.redirect(`/solution/${req.params.num}`);
+    if (info.solutions[req.params.idx].type === 'md') res.render('solution', {
+        error: '',
+        data: {
+            edit: 'true',
+            pidx: req.params.idx,
+            lang: info.solutions[req.params.idx].lang,
+            desc: info.solutions[req.params.idx].name,
+            type: 'md',
+            md: await fs.readFile(`archive/${req.params.num}/solutions/${info.solutions[req.params.idx].filename}`),
+            file: info.solutions[req.params.idx].filename
+        },
+        num: req.params.num,
+        providing: info.providing
+    });
+    else if (info.solutions[req.params.idx].type === 'pdf') res.render('solution', {
+        error: '',
+        data: {
+            edit: 'true',
+            pidx: req.params.idx,
+            lang: info.solutions[req.params.idx].lang,
+            desc: info.solutions[req.params.idx].name,
+            type: 'pdf',
+            pdf: info.solutions[req.params.idx].path
+        },
+        num: req.params.num,
+        providing: info.providing
+    });
+});
+
+app.post('/description/:num/delete', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+    const idx = req.body.descriptions;
+    if (!idx) return res.redirect(`/description/${req.params.num}`);
+    const info = JSON.parse(await fs.readFile(`archive/${req.params.num}/info.json`));
+    const oldVers = info.versions.slice();
+    const desc = info.versions[idx];
+    info.versions.splice(idx, 1);
+    if (desc.type === 'md') await fs.unlink(`archive/${req.params.num}/descriptions/${desc.filename}`);
+    await fs.writeFile(`archive/${req.params.num}/info.json`, JSON.stringify(info));
+    await addHistory(req.params.num, req.session.auth.user, 'RMVDSC', desc.name, {
+        before: {
+            info: {
+                versions: oldVers
+            }
+        },
+        after: {
+            info: {
+                versions: info.versions
+            }
+        }
+    });
+    res.redirect(`/description/${req.params.num}`);
+});
+
+app.post('/solution/:num/delete', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+    const idx = req.body.solutions;
+    if (!idx) return res.redirect(`/solution/${req.params.num}`);
+    const info = JSON.parse(await fs.readFile(`archive/${req.params.num}/info.json`));
+    const oldVers = info.solutions.slice();
+    const desc = info.solutions[idx];
+    info.solutions.splice(idx, 1);
+    if (desc.type === 'md') await fs.unlink(`archive/${req.params.num}/solutions/${desc.filename}`);
+    await fs.writeFile(`archive/${req.params.num}/info.json`, JSON.stringify(info));
+    await addHistory(req.params.num, req.session.auth.user, 'RMVSOL', desc.name, {
+        before: {
+            info: {
+                solutions: oldVers
+            }
+        },
+        after: {
+            info: {
+                solutions: info.solutions
+            }
+        }
+    });
+    res.redirect(`/solution/${req.params.num}`);
+});
+
+app.post('/description/:num/add', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+    var info = JSON.parse(await fs.readFile(`archive/${req.params.num}/info.json`));
+    if (!req.body.desc) return res.render('description', {
+        error: 'Name empty',
+        data: req.body,
+        num: req.params.num,
+        providing: info.providing
+    });
+    if (!req.body.lang) return res.render('description', {
+        error: 'Lang empty',
+        data: req.body,
+        num: req.params.num,
+        providing: info.providing
+    });
+    if (req.body.edit === 'true') {
+        const idx = parseInt(req.body.pidx);
+            if (idx != req.body.pidx || idx >= info.versions.length) return res.render('description', {
+            error: 'Invalid index',
+            data: req.body,
+            num: req.params.num,
+            providing: info.providing
+        });
+    }
+    const oldVers = (info.versions ? info.versions : []).slice();
+    if (req.body.type === 'md') {
+        if (inappropriate(req.body.file)) return res.render('description', {
+            error: 'Filename prohibited',
+            data: req.body,
+            num: req.params.num,
+            providing: info.providing
+        });
+        if (!req.body.file) return res.render('description', {
+            error: 'Filename empty',
+            data: req.body,
+            num: req.params.num,
+            providing: info.providing
+        });
+        var l = -1;
+        if (info.versions) for (var i = 0; i < info.versions.length; i++) if (info.versions[i].type === 'md' && info.versions[i].filename === req.body.file) l = i;
+        if (l != -1 && (req.body.edit !== 'true' || l !== parseInt(req.body.pidx))) return res.render('description', {
+            error: 'Filename already exists',
+            data: req.body,
+            num: req.params.num,
+            providing: info.providing
+        });
+        var oldDesc = '';
+        var k = -1;
+        if (info.versions) for (var i = 0; i < info.versions.length; i++) if (info.versions[i].name === req.body.desc) k = i;
+        if (k != -1 && (req.body.edit !== 'true' || k !== parseInt(req.body.pidx))) return res.render('description', {
+            error: 'Name already exists',
+            data: req.body,
+            num: req.params.num,
+            providing: info.providing
+        });
+        if (req.body.edit === 'true') {
+            if (info.versions[parseInt(req.body.pidx)].type === 'md') {
+                oldDesc = (await fs.readFile(`archive/${req.params.num}/descriptions/${info.versions[parseInt(req.body.pidx)].filename}`)).toString();
+                await fs.unlink(`archive/${req.params.num}/descriptions/${info.versions[parseInt(req.body.pidx)].filename}`);
+            }
+            info.versions.splice(parseInt(req.body.pidx), 1);
+        }
+        await mkdir(`archive/${req.params.num}/descriptions`);
+        await fs.writeFile(`archive/${req.params.num}/descriptions/${req.body.file}`, req.body.md);
+        if (!info.versions) info.versions = [];
+        info.versions.push({
+            type: req.body.type,
+            lang: req.body.lang,
+            filename: req.body.file,
+            name: req.body.desc
+        });
+        await fs.writeFile(`archive/${req.params.num}/info.json`, JSON.stringify(info));
+        await addHistory(req.params.num, req.session.auth.user, req.body.edit !== 'true' ? 'CRTDSC' : 'EDTDSC', req.body.desc, {
+            before: {
+                description: oldDesc,
+                info: {
+                    versions: oldVers
+                }
+            },
+            after: {
+                description: req.body.md,
+                info: {
+                    versions: info.versions
+                }
+            }
+        });
+        res.redirect(`/description/${req.params.num}`);
+    } else if (req.body.type === 'pdf') {
+        var k = -1;
+        if (info.versions) for (var i = 0; i < info.versions.length; i++) if (info.versions[i].name === req.body.desc) k = i;
+        if (k != -1 && (req.body.edit !== 'true' || k !== parseInt(req.body.pidx))) return res.render('description', {
+            error: 'Name already exists',
+            data: req.body,
+            num: req.params.num,
+            providing: info.providing
+        });
+        if (req.body.edit === 'true') {
+            if (info.versions[parseInt(req.body.pidx)].type === 'md') await fs.unlink(`archive/${req.params.num}/descriptions/${info.versions[parseInt(req.body.pidx)].filename}`);
+            info.versions.splice(parseInt(req.body.pidx), 1);
+        }
+        if (!info.versions) info.versions = [];
+        info.versions.push({
+            type: req.body.type,
+            lang: req.body.lang,
+            path: req.body.pdf,
+            name: req.body.desc
+        });
+        await fs.writeFile(`archive/${req.params.num}/info.json`, JSON.stringify(info));
+        await addHistory(req.params.num, req.session.auth.user, req.body.edit !== 'true' ? 'CRTDSC' : 'EDTDSC', req.body.desc, {
+            before: {
+                info: {
+                    versions: oldVers
+                }
+            },
+            after: {
+                info: {
+                    versions: info.versions
+                }
+            }
+        });
+        res.redirect(`/description/${req.params.num}`);
+    } else return res.render('description', {
+        error: 'Choose description type',
+        data: req.body,
+        num: req.params.num,
+        providing: info.providing
+    });
+});
+
+app.post('/solution/:num/add', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+    var info = JSON.parse(await fs.readFile(`archive/${req.params.num}/info.json`));
+    if (!req.body.desc) return res.render('solution', {
+        error: 'Name empty',
+        data: req.body,
+        num: req.params.num,
+        providing: info.providing
+    });
+    if (!req.body.lang) return res.render('solution', {
+        error: 'Lang empty',
+        data: req.body,
+        num: req.params.num,
+        providing: info.providing
+    });
+    if (req.body.edit === 'true') {
+        const idx = parseInt(req.body.pidx);
+            if (idx != req.body.pidx || idx >= info.solutions.length) return res.render('solution', {
+            error: 'Invalid index',
+            data: req.body,
+            num: req.params.num,
+            providing: info.providing
+        });
+    }
+    const oldVers = (info.solutions ? info.solutions : []).slice();
+    if (req.body.type === 'md') {
+        if (inappropriate(req.body.file)) return res.render('solution', {
+            error: 'Filename prohibited',
+            data: req.body,
+            num: req.params.num,
+            providing: info.providing
+        });
+        if (!req.body.file) return res.render('solution', {
+            error: 'Filename empty',
+            data: req.body,
+            num: req.params.num,
+            providing: info.providing
+        });
+        var l = -1;
+        if (info.solutions) for (var i = 0; i < info.solutions.length; i++) if (info.solutions[i].type === 'md' && info.solutions[i].filename === req.body.file) l = i;
+        if (l != -1 && (req.body.edit !== 'true' || l !== parseInt(req.body.pidx))) return res.render('solution', {
+            error: 'Filename already exists',
+            data: req.body,
+            num: req.params.num,
+            providing: info.providing
+        });
+        var oldDesc = '';
+        var k = -1;
+        if (info.solutions) for (var i = 0; i < info.solutions.length; i++) if (info.solutions[i].name === req.body.desc) k = i;
+        if (k != -1 && (req.body.edit !== 'true' || k !== parseInt(req.body.pidx))) return res.render('solution', {
+            error: 'Name already exists',
+            data: req.body,
+            num: req.params.num,
+            providing: info.providing
+        });
+        if (req.body.edit === 'true') {
+            if (info.solutions[parseInt(req.body.pidx)].type === 'md') {
+                oldDesc = (await fs.readFile(`archive/${req.params.num}/solutions/${info.solutions[parseInt(req.body.pidx)].filename}`)).toString();
+                await fs.unlink(`archive/${req.params.num}/solutions/${info.solutions[parseInt(req.body.pidx)].filename}`);
+            }
+            info.solutions.splice(parseInt(req.body.pidx), 1);
+        }
+        await mkdir(`archive/${req.params.num}/solutions`);
+        await fs.writeFile(`archive/${req.params.num}/solutions/${req.body.file}`, req.body.md);
+        if (!info.solutions) info.solutions = [];
+        info.solutions.push({
+            type: req.body.type,
+            lang: req.body.lang,
+            filename: req.body.file,
+            name: req.body.desc
+        });
+        await fs.writeFile(`archive/${req.params.num}/info.json`, JSON.stringify(info));
+        await addHistory(req.params.num, req.session.auth.user, req.body.edit !== 'true' ? 'CRTSOL' : 'EDTSOL', req.body.desc, {
+            before: {
+                solution: oldDesc,
+                info: {
+                    solutions: oldVers
+                }
+            },
+            after: {
+                solution: req.body.md,
+                info: {
+                    solutions: info.solutions
+                }
+            }
+        });
+        res.redirect(`/solution/${req.params.num}`);
+    } else if (req.body.type === 'pdf') {
+        var k = -1;
+        if (info.solutions) for (var i = 0; i < info.solutions.length; i++) if (info.solutions[i].name === req.body.desc) k = i;
+        if (k != -1 && (req.body.edit !== 'true' || k !== parseInt(req.body.pidx))) return res.render('solution', {
+            error: 'Name already exists',
+            data: req.body,
+            num: req.params.num,
+            providing: info.providing
+        });
+        if (req.body.edit === 'true') {
+            if (info.solutions[parseInt(req.body.pidx)].type === 'md') await fs.unlink(`archive/${req.params.num}/solutions/${info.solutions[parseInt(req.body.pidx)].filename}`);
+            info.solutions.splice(parseInt(req.body.pidx), 1);
+        }
+        if (!info.solutions) info.solutions = [];
+        info.solutions.push({
+            type: req.body.type,
+            lang: req.body.lang,
+            path: req.body.pdf,
+            name: req.body.desc
+        });
+        await fs.writeFile(`archive/${req.params.num}/info.json`, JSON.stringify(info));
+        await addHistory(req.params.num, req.session.auth.user, req.body.edit !== 'true' ? 'CRTSOL' : 'EDTSOL', req.body.desc, {
+            before: {
+                info: {
+                    solutions: oldVers
+                }
+            },
+            after: {
+                info: {
+                    solutions: info.solutions
+                }
+            }
+        });
+        res.redirect(`/solution/${req.params.num}`);
+    } else return res.render('solution', {
+        error: 'Choose solution type',
+        data: req.body,
+        num: req.params.num,
+        providing: info.providing
+    });
+});
+
+app.get('/solutions/:num', async function (req, res) {
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+    const info = JSON.parse(await fs.readFile(`archive/${req.params.num}/info.json`));
+    var contents = [ ];
+    for (idx in info.solutions) {
+        const obj = info.solutions[idx];
+        if (obj.type === 'md') {
+            const content = await fs.readFile(`archive/${req.params.num}/solutions/${obj.filename}`);
+            contents.push({
+                content: content.toString(),
+                type: obj.type,
+                lang: obj.lang,
+                name: obj.name,
+            });
+        } else if (obj.type === 'pdf') {
+            contents.push({
+                content: obj.path,
+                type: obj.type,
+                lang: obj.lang,
+                name: obj.name
+            });
+        }
+    }
+    return res.render('sol', {
+        num: req.params.num,
+        info: info,
+        contents: contents
+    });
+});
+
+app.get('/provide/:num', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+    await mkdir(`archive/${req.params.num}/providing`);
+    const info = JSON.parse(await fs.readFile(`archive/${req.params.num}/info.json`));
+    res.render('provide', {
+        num: req.params.num,
+        providing: info.providing
+    });
+});
+
+app.get('/helper/:num', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+    await mkdir(`archive/${req.params.num}/helper`);
+    var helper = [ ];
+    try {
+        helper = JSON.parse(await fs.readFile(`archive/${req.params.num}/helpers.json`));
+    } catch (e) { }
+    res.render('helper', {
+        num: req.params.num,
+        helper: helper
+    });
+});
+
+app.post('/provide/:num', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    if (!req.files || !req.files.upload) return res.redirect(`/provide/${req.params.num}`);
+    const name = req.body.name || req.files.upload.name;
+    if (inappropriate(name)) return res.redirect(`/provide/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+    await mkdir(`archive/${req.params.num}/providing`);
+    var info = JSON.parse(await fs.readFile(`archive/${req.params.num}/info.json`));
+    if (!info.providing) info.providing = [ ];
+    const oldProv = info.providing.slice();
+    await upload(req.files.upload, `archive/${req.params.num}/providing/${name}`);
+    if (info.providing.includes(name)) {
+        await addHistory(req.params.num, req.session.auth.user, 'EDTPRV', name, { });
+    } else {
+        info.providing.push(name);
+        await fs.writeFile(`archive/${req.params.num}/info.json`, JSON.stringify(info));
+        await addHistory(req.params.num, req.session.auth.user, 'CRTPRV', name, {
+            before: {
+                info: {
+                    providing: oldProv
+                }
+            },
+            after: {
+                info: {
+                    providing: info.providing
+                }
+            }
+        });
+    }
+    res.redirect(`/provide/${req.params.num}`);
+});
+
+app.post('/helper/:num', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    if (!req.files || !req.files.upload) return res.redirect(`/helper/${req.params.num}`);
+    const name = req.body.name || req.files.upload.name;
+    if (inappropriate(name)) return res.redirect(`/helper/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+    await mkdir(`archive/${req.params.num}/helper`);
+    var helper = [ ];
+    try {
+        helper = JSON.parse(await fs.readFile(`archive/${req.params.num}/helpers.json`));
+    } catch (e) { }
+    await upload(req.files.upload, `archive/${req.params.num}/helper/${name}`);
+    if (!helper.includes(name)) {
+        helper.push(name);
+        await fs.writeFile(`archive/${req.params.num}/helpers.json`, JSON.stringify(helper));
+    }
+    res.redirect(`/helper/${req.params.num}`);
+});
+
+app.post('/provide/:num/delete', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    if (!req.body.providings) return res.redirect(`/provide/${req.params.num}`);
+    const name = req.body.providings;
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+    var info = JSON.parse(await fs.readFile(`archive/${req.params.num}/info.json`));
+    const oldProv = info.providing.slice();
+    const k = info.providing.indexOf(name);
+    if (k === -1) return res.redirect(`/provide/${req.params.num}`);
+    info.providing.splice(k, 1);
+    await fs.unlink(`archive/${req.params.num}/providing/${name}`);
+    await fs.writeFile(`archive/${req.params.num}/info.json`, JSON.stringify(info));
+    await addHistory(req.params.num, req.session.auth.user, 'RMVPRV', name, {
+        before: {
+            info: {
+                providing: oldProv
+            }
+        },
+        after: {
+            info: {
+                providing: info.providing
+            }
+        }
+    });
+    res.redirect(`/provide/${req.params.num}`);
+});
+
+app.post('/helper/:num/delete', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    if (!req.body.helper) return res.redirect(`/helper/${req.params.num}`);
+    const name = req.body.helper;
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+    var helper = [ ];
+    try {
+        helper = JSON.parse(await fs.readFile(`archive/${req.params.num}/helpers.json`));
+    } catch (e) { }
+    const k = helper.indexOf(name);
+    if (k === -1) return res.redirect(`/helper/${req.params.num}`);
+    helper.splice(k, 1);
+    await fs.unlink(`archive/${req.params.num}/helper/${name}`);
+    await fs.writeFile(`archive/${req.params.num}/helpers.json`, JSON.stringify(helper));
+    res.redirect(`/helper/${req.params.num}`);
+});
+
+app.get('/rename/:num', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+    var info = JSON.parse(await fs.readFile(`archive/${req.params.num}/info.json`));
+    res.render('rename', {
+        num: req.params.num,
+        title: info.title
+    });
+});
+
+app.post('/rename/:num', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+    if (req.body.title.length <= 0) return res.redirect(`/rename/${req.params.num}`);
+    sql.query(`UPDATE problems SET title = ${mysql.escape(req.body.title)} WHERE num = ${mysql.escape(req.params.num)}`);
+    var info = JSON.parse(await fs.readFile(`archive/${req.params.num}/info.json`));
+    const oldTitle = info.title;
+    info.title = req.body.title;
+    await fs.writeFile(`archive/${req.params.num}/info.json`, JSON.stringify(info));
+    await addHistory(req.params.num, req.session.auth.user, 'EDTTTL', info.title, {
+        before: {
+            info: {
+                title: oldTitle
+            }
+        },
+        after: {
+            info: {
+                title: info.title
+            }
+        }
+    });
+    info = JSON.parse(await fs.readFile(`archive/problems.json`));
+    info.problems[req.params.num].title = req.body.title;
+    await fs.writeFile(`archive/problems.json`, JSON.stringify(info));
+    res.redirect(`/view/${req.params.num}`);
+});
+
+app.get('/examples/:num', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+    const info = JSON.parse(await fs.readFile(`archive/${req.params.num}/info.json`));
+    var examples = [ ];
+    try {
+        examples = JSON.parse(await fs.readFile(`archive/${req.params.num}/examples.json`));
+    } catch (e) { }
+    res.render('examples', {
+        num: req.params.num,
+        info: info,
+        examples: examples
+    });
+});
+
+app.post('/examples/:num', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+    var oldEx = [ ];
+    try {
+        oldEx = JSON.parse(await fs.readFile(`archive/${req.params.num}/examples.json`));
+    } catch (e) { }
+    var examples = [ ];
+    for (var i = 0; ; i++) {
+        if (req.body[`${i}input`] === undefined || req.body[`${i}output`] === undefined || req.body[`${i}desc`] === undefined) break;
+        examples.push({
+            input: req.body[`${i}input`],
+            output: req.body[`${i}output`],
+            desc: req.body[`${i}desc`],
+            enabled: req.body[`${i}enabled`] ? true : false,
+            use: req.body[`${i}use`] ? true : false
+        });
+    }
+    await fs.writeFile(`archive/${req.params.num}/examples.json`, JSON.stringify(examples));
+    await addHistory(req.params.num, req.session.auth.user, 'EDTEXP', null, {
+        before: {
+            examples: oldEx
+        },
+        after: {
+            examples: examples
+        }
+    });
+    res.redirect(`/view/${req.params.num}`);
 })
 
-app.get('*', function (req, res) {
-    return res.send('Not Found');
+app.get('/row/:num', async function (req, res) {
+    if (parseInt(req.params.num) != req.params.num) return res.send('Not Found');
+    const [ rows, fields ] = await sql.query(`SELECT problem, user, type, arg, date FROM histories WHERE cnt = ${parseInt(req.params.num)};`);
+    if (rows.length <= 0) res.send('Not Found');
+    var changelog = {
+        before: { },
+        after: { }
+    };
+    try {
+        changelog = JSON.parse(await fs.readFile(`changelog/${req.params.num}`));
+    } catch (e) { }
+    var cl = [ ];
+    var keys = [ ];
+    if (changelog.before) for (key in changelog.before) if (key !== 'info' && !keys.includes(key)) keys.push(key);
+    if (changelog.after) for (key in changelog.after) if (key !== 'info' && !keys.includes(key)) keys.push(key);
+    keys.forEach(function (item) {
+        cl.push({
+            key: item,
+            before: JSON.stringify(changelog.before[item]),
+            after: JSON.stringify(changelog.after[item])
+        });
+    });
+    keys = [ ];
+    if (changelog.before && changelog.before.info) for (key in changelog.before.info) if (!keys.includes(key)) keys.push(key);
+    if (changelog.after && changelog.after.info) for (key in changelog.after.info) if (!keys.includes(key)) keys.push(key);
+    keys.forEach(function (item) {
+        cl.push({
+            key: item,
+            before: JSON.stringify(changelog.before.info ? changelog.before.info[item] : ''),
+            after: JSON.stringify(changelog.after.info ? changelog.after.info[item] : '')
+        });
+    });
+    res.render('row', {
+        num: req.params.num,
+        prenum: rows[0].problem,
+        info: rows[0],
+        changelog: cl,
+        getHistory: getHistory
+    })
+});
+
+app.get('/data/:num', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+    var data = [];
+    try {
+        data = JSON.parse(await fs.readFile(`archive/${req.params.num}/data.json`));
+    } catch (e) { }
+    res.render('data', {
+        num: req.params.num,
+        data: data
+    });
+});
+
+app.get('/data/:num/add', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+    var data = [ ];
+    try {
+        data = JSON.parse(await fs.readFile(`archive/${req.params.num}/data.json`));
+    } catch (e) { }
+    var datalt = [ ];
+    for (var i = 0; i < data.length; i++) datalt.push(data[i].desc);
+    res.render('dataset', {
+        data: { },
+        num: req.params.num,
+        datalt: datalt,
+        dataset: [ ]
+    });
+});
+
+app.get('/data/:num/edit/:idx', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+    var data = [];
+    try {
+        data = JSON.parse(await fs.readFile(`archive/${req.params.num}/data.json`));
+    } catch (e) { }
+    var datalt = [ ];
+    for (var i = 0; i < data.length; i++) datalt.push(data[i].desc);
+    if (parseInt(req.params.idx) != req.params.idx) return res.redirect(`/data/${req.params.num}`);
+    if (data.length <= req.params.idx || req.params.idx < 0) return res.redirect(`/data/${req.params.num}`);
+    res.render('dataset', {
+        data: {
+            edit: 'true',
+            pidx: req.params.idx,
+            desc: data[req.params.idx].name
+        },
+        num: req.params.num,
+        datalt: datalt,
+        dataset: data[req.params.idx].data
+    });
+});
+
+app.post('/data/:num/delete', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+    const idx = req.body.data;
+    if (!idx) return res.redirect(`/data/${req.params.num}`);
+    var data = [];
+    try {
+        data = JSON.parse(await fs.readFile(`archive/${req.params.num}/data.json`));
+    } catch (e) { }
+    await fs.unlink(`archive/${req.params.num}/data/${data[idx].name}.zip`);
+    data.splice(idx, 1);
+    await fs.writeFile(`archive/${req.params.num}/data.json`, JSON.stringify(data));
+    res.redirect(`/data/${req.params.num}`);
+});
+
+async function searchIn(dir) {
+    var lt = [ ];
+    const content = await fs.readdir(dir);
+    for (file in content) {
+        const fullPath = path.join(dir, content[file]);
+        if ((await fs.lstat(fullPath)).isDirectory()) {
+            const res = await searchIn(fullPath);
+            for (item in res) lt.push(res[item]);
+        } else lt.push(fullPath);
+    }
+    return lt;
+}
+
+function includeName(lt, x) {
+    for (var i = 0; i < lt.length; i++) if (lt[i].name === x) return true;
+    return false;
+}
+
+function searchPath(lt, x) {
+    for (var i = 0; i < lt.length; i++) if (lt[i].name === x) return lt[i].path;
+    return '';
+}
+
+function omitExtension(x) {
+    var y = x.split('.');
+    y.pop();
+    return y.join('.');
+}
+
+app.post('/data/:num/add', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+    if (!req.body.desc) return res.redirect(`/data/${req.params.num}`);
+    var data = [];
+    try {
+        data = JSON.parse(await fs.readFile(`archive/${req.params.num}/data.json`));
+    } catch (e) { }
+    var k = -1;
+    var oldData = {};
+    if (req.body.edit === 'true') {
+        if (parseInt(req.body.pidx) != req.body.pidx) return res.redirect(`/data/${req.params.num}`);
+        if (data.length <= req.body.pidx || req.body.pidx < 0) return res.redirect(`/data/${req.params.num}`);
+        oldData = data[req.body.pidx];
+        data.splice(req.body.pidx, 1);
+    }
+    for (var i = 0; i < data.length; i++) if (data[i].name === req.body.desc) k = i;
+    if (k != -1 && req.body.edit !== 'true') return res.redirect(`/data/${req.params.num}`);
+    await fs.rmdir(`archive/${req.params.num}/data/tmp`, {
+        recursive: true,
+        force: true
+    });
+    await mkdir(`archive/${req.params.num}/data/tmp`);
+    var fileList = [ ];
+    if (req.body.edit === 'true') {
+        await decompress(`archive/${req.params.num}/data/${req.body.desc}.zip`, `archive/${req.params.num}/data/tmp/${req.body.desc}`);
+        for (var i = 0; i < oldData.data.length; i++) if (!req.body[`${i}delete`]) {
+            fileList.push({
+                path: `archive/${req.params.num}/data/tmp/${req.body.desc}/${oldData.data[i]}.in`,
+                name: `${oldData.data[i]}.in`
+            });
+            fileList.push({
+                path: `archive/${req.params.num}/data/tmp/${req.body.desc}/${oldData.data[i]}.out`,
+                name: `${oldData.data[i]}.out`
+            });
+        }
+    }
+    for (idx in req.files) {
+        await upload(req.files[idx], `archive/${req.params.num}/data/tmp/${req.files[idx].name}`)
+        if ([...req.files[idx].name.matchAll('\\.zip$')].length > 0) {
+            await decompress(`archive/${req.params.num}/data/tmp/${req.files[idx].name}`, `archive/${req.params.num}/data/tmp/${omitExtension(path.basename(req.files[idx].name))}`);
+            (await searchIn(`archive/${req.params.num}/data/tmp/${omitExtension(path.basename(req.files[idx].name))}`)).forEach(function (item) {
+                if ([...item.matchAll('\\.(in|out)$')].length > 0 && !includeName(fileList, path.basename(item))) fileList.push({
+                    path: item,
+                    name: path.basename(item)
+                });
+            });
+        } else if ([...req.files[idx].name.matchAll('\\.(in|out)$')].length > 0 && !includeName(fileList, req.files[idx].name)) fileList.push({
+            path: `archive/${req.params.num}/data/tmp/${req.files[idx].name}`,
+            name: req.files[idx].name
+        });
+    }
+    var nameList = [ ];
+    for (idx in fileList) {
+        var filename = omitExtension(fileList[idx].name);
+        if (!nameList.includes(filename)) nameList.push(filename);
+    }
+    nameList.sort();
+    const zip = archiver('zip', { zlib: { level: 9 }});
+    zip.on('warning', function (warn) {
+        console.log('Archiver warning: ', warn);
+    });
+    zip.on('error', function (err) {
+        console.log('Archiver error: ', err);
+    });
+    const writeStream = fsStream.createWriteStream(path.join(__dirname, `archive/${req.params.num}/data/${req.body.desc}.zip`));
+    zip.pipe(writeStream);
+    for (idx in nameList) {
+        const basename = nameList[idx];
+        const input = searchPath(fileList, basename + '.in');
+        const output = searchPath(fileList, basename + '.out');
+        zip.append(fsStream.createReadStream(input), {
+            name: basename + '.in'
+        });
+        zip.append(fsStream.createReadStream(output), {
+            name: basename + '.out'
+        });
+    }
+    await zip.finalize();
+    data.push({
+        name: req.body.desc,
+        data: nameList
+    });
+    await fs.writeFile(`archive/${req.params.num}/data.json`, JSON.stringify(data));
+    await fs.rmdir(`archive/${req.params.num}/data/tmp`, {
+        recursive: true,
+        force: true
+    });
+    res.redirect(`/data/${req.params.num}`);
+});
+
+app.get('/grading/:num', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+    var grading = { };
+    try {
+        grading = JSON.parse(await fs.readFile(`archive/${req.params.num}/data.json`));
+    } catch (e) { }
+    res.render('grading', {
+        num: req.params.num,
+        grading: grading
+    });
+});
+
+app.get('/:num', function (req, res) {
+    return res.redirect(`/view/${req.params.num}`);
 });
 
 function getResult(x) {
@@ -290,13 +1573,15 @@ function getResult(x) {
     return 'Unknown';
 }
 
-var port = 3000;
+const port = 3000;
 http.listen(port, function (req, res) {
     console.log('HTTP is listening on port ' + port);
 });
 
+const workerNum = 3;
+
 (function initialize() {
-    for (var i = 0; i < 3; i++) {
+    for (var i = 0; i < workerNum; i++) {
         var curr = new Worker (path.join(__dirname, 'worker.js'), {
             workerData: {
                 workerNum: i
@@ -315,24 +1600,34 @@ http.listen(port, function (req, res) {
             }
             if (msg.data == 'busy') workers[msg.workerNum].busy = true;
             if (msg.data == 'updt') {
-                var done = 1;
-                if (msg.content.result.done !== undefined) done = msg.content.result.done;
-                if (msg.content.result.result == 'AC') {
-                    const [ rows, fields ] = await sql.query(`SELECT result FROM submissions WHERE id = '${msg.content.id}';`);
-                    if (rows.length > 0 && rows[0].result !== 'AC') await sql.query(`UPDATE problems SET correctCnt = correctCnt + 1 WHERE num = ${mysql.escape(msg.content.problem)};`);
-                }
-                await sql.query(`UPDATE submissions SET result = '${msg.content.result.result}' WHERE id = '${msg.content.id}';`);
-                if (msg.content.result.time !== undefined) await sql.query(`UPDATE submissions SET time = ${msg.content.result.time} WHERE id = '${msg.content.id}';`);
-                if (msg.content.result.mem !== undefined) await sql.query(`UPDATE submissions SET memory = ${msg.content.result.mem} WHERE id = '${msg.content.id}';`);
-                if (idSockets[msg.content.id]) idSockets[msg.content.id].forEach(function (item, index, object) {
-                    if (Date.now() - socketList[item].time > 24 * 60 * 60 * 1000) object.splice(index, 1);
-                    io.to(item).emit('updt', {
-                        result: getResult(msg.content.result.result),
-                        time: msg.content.result.time,
-                        mem: msg.content.result.mem,
-                        progress: done
+                if (msg.content.type === 'ioiSimple') {
+                    var done = 1;
+                    if (msg.content.result.done !== undefined) done = msg.content.result.done;
+                    if (msg.content.result.result == 'AC') {
+                        const [ rows, fields ] = await sql.query(`SELECT result FROM submissions WHERE id = ${mysql.escape(msg.content.id)};`);
+                        if (rows.length > 0 && rows[0].result !== 'AC') await sql.query(`UPDATE problems SET correctCnt = correctCnt + 1 WHERE num = ${mysql.escape(msg.content.problem)};`);
+                    }
+                    await sql.query(`UPDATE submissions SET result = ${mysql.escape(msg.content.result.result)} WHERE id = ${mysql.escape(msg.content.id)};`);
+                    if (msg.content.result.time !== undefined) await sql.query(`UPDATE submissions SET time = ${msg.content.result.time} WHERE id = ${mysql.escape(msg.content.id)};`);
+                    if (msg.content.result.mem !== undefined) await sql.query(`UPDATE submissions SET memory = ${msg.content.result.mem} WHERE id = ${mysql.escape(msg.content.id)};`);
+                    if (idSockets[msg.content.id]) idSockets[msg.content.id].forEach(function (item, index, object) {
+                        if (Date.now() - socketList[item].time > 24 * 60 * 60 * 1000) object.splice(index, 1);
+                        io.to(item).emit('updt', {
+                            result: getResult(msg.content.result.result),
+                            time: msg.content.result.time,
+                            mem: msg.content.result.mem,
+                            progress: done
+                        });
                     });
-                });
+                } else if (msg.content.type === 'checker') {
+                    if (msg.content.result.result === 'AC') {
+                        const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM checkers WHERE file = ${mysql.escape(msg.content.id)};`);
+                        if (rows[0]['COUNT(1)'] <= 0) await sql.query(`INSERT INTO checkers (file, description) VALUES (${mysql.escape(msg.content.id)}, ${mysql.escape(msg.content.description)});`);
+                    }
+                    if (checkerSocket[msg.content.id]) io.to(checkerSocket[msg.content.id]).emit('updt', {
+                        result: msg.content.result.result
+                    });
+                }
             }
         });
     }
@@ -350,21 +1645,62 @@ http.listen(port, function (req, res) {
         await sql.query('CREATE TABLE IF NOT EXISTS redirections (num VARCHAR(100) PRIMARY KEY, href VARCHAR(100) NOT NULL);');
         await sql.query('CREATE TABLE IF NOT EXISTS submissions (cnt INT UNIQUE NOT NULL AUTO_INCREMENT, id CHAR(64) PRIMARY KEY, user VARCHAR(100) NOT NULL, result VARCHAR(5), marks INT, problem VARCHAR(100) NOT NULL, time DOUBLE, memory DOUBLE, submitDate DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user) REFERENCES users(user), FOREIGN KEY (problem) REFERENCES problems(num));');
         if ((await sql.query('SELECT COUNT(1) FROM INFORMATION_SCHEMA.STATISTICS WHERE table_schema=DATABASE() AND table_name=\'submissions\' AND index_name=\'problemIndex\''))[0][0]['COUNT(1)'] <= 0) await sql.query('CREATE INDEX problemIndex ON submissions (problem);');
-        await sql.query('CREATE TABLE IF NOT EXISTS histories (cnt INT UNIQUE NOT NULL AUTO_INCREMENT, problem VARCHAR(100) NOT NULL, user VARCHAR(100) NOT NULL, type CHAR(6) NOT NULL DEFAULT \'UNKNWN\', arg VARCHAR(100), date DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user) REFERENCES users(user), FOREIGN KEY (problem) REFERENCES problems(num));');
+        await sql.query('CREATE TABLE IF NOT EXISTS histories (cnt INT UNIQUE NOT NULL AUTO_INCREMENT, problem VARCHAR(100) NOT NULL, user VARCHAR(100) NOT NULL, type CHAR(6) NOT NULL DEFAULT \'UNKNWN\', arg VARCHAR(100), date DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user) REFERENCES users(user));');
         if ((await sql.query('SELECT COUNT(1) FROM INFORMATION_SCHEMA.STATISTICS WHERE table_schema=DATABASE() AND table_name=\'histories\' AND index_name=\'problemIndex\';'))[0][0]['COUNT(1)'] <= 0) await sql.query('CREATE INDEX problemIndex ON histories (problem);');
+        await sql.query('CREATE TABLE IF NOT EXISTS checkers (file VARCHAR(100) PRIMARY KEY, description VARCHAR(500));');
+        await loadCheckers();
         await loadProblems();
         console.log('SQL config done');
+        const probs = (await sql.query('SELECT num FROM problems;'))[0];
+        probs.forEach(function (item) {
+            console.log(`Use ${`/prividing/${item.num}`} with ${`archive/${item.num}/providing`}`)
+            app.use(`/view/${item.num}/providing`, express.static(path.join(__dirname, `archive/${item.num}/providing`)));
+        });
+
+        app.get('*', function (req, res) {
+            return res.send('Not Found');
+        });
     })();
 })();
+
+async function loadCheckers() {
+    const content = JSON.parse(await fs.readFile('grading/checkers.json'));
+    for (file in content.checkers) {
+        const desc = content.checkers[file];
+        if ((await sql.query(`SELECT COUNT(1) FROM checkers WHERE file = ${mysql.escape(file)};`))[0][0]['COUNT(1)'] >= 1) {
+            await sql.query(`UPDATE checkers SET description = ${mysql.escape(desc)} WHERE file = ${mysql.escape(file)};`);
+        } else {
+            await sql.query(`INSERT INTO checkers (file, description) VALUES (${mysql.escape(file)}, ${mysql.escape(desc)});`);
+        }
+    }
+}
+
+async function saveChecker(file, desc) {
+    var content = JSON.parse(await fs.readFile('grading/checkers.json'));
+    content.checkers[file] = desc;
+    await fs.writeFile('grading/checkers.json', JSON.stringify(content));
+    if ((await sql.query(`SELECT COUNT(1) FROM checkers WHERE file = ${mysql.escape(file)};`))[0][0]['COUNT(1)'] >= 1) {
+        await sql.query(`UPDATE checkers SET description = ${mysql.escape(desc)} WHERE file = ${mysql.escape(file)};`);
+    } else {
+        await sql.query(`INSERT INTO checkers (file, description) VALUES (${mysql.escape(file)}, ${mysql.escape(desc)});`);
+    }
+}
+
+async function removeChecker(file) {
+    var content = JSON.parse(await fs.readFile('grading/checkers.json'));
+    delete content.checkers[file];
+    await fs.writeFile('grading/checkers.json', JSON.stringify(content));
+    await sql.query(`DELETE FROM checkers WHERE file = ${mysql.escape(file)}`);
+}
 
 async function loadProblems() {
     const content = JSON.parse(await fs.readFile('archive/problems.json'));
     for (num in content.problems) {
         const problem = content.problems[num];
         if ((await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(num)};`))[0][0]['COUNT(1)'] >= 1) {
-            await sql.query(`UPDATE problems SET title = '${problem.title}', gradingStyle = '${problem.gradingStyle}' WHERE num = ${mysql.escape(num)};`);
+            await sql.query(`UPDATE problems SET title = ${mysql.escape(problem.title)}, gradingStyle = ${mysql.escape(problem.gradingStyle)} WHERE num = ${mysql.escape(num)};`);
         } else {
-            await sql.query(`INSERT INTO problems (num, title, gradingStyle) values (${mysql.escape(num)}, '${problem.title}', '${problem.gradingStyle}');`);
+            await sql.query(`INSERT INTO problems (num, title, gradingStyle) VALUES (${mysql.escape(num)}, ${mysql.escape(problem.title)}, ${mysql.escape(problem.gradingStyle)});`);
         }
         if ((await sql.query(`SELECT COUNT(1) FROM redirections WHERE num = ${mysql.escape(num)};`))[0][0]['COUNT(1)'] >= 1) {
             await sql.query(`DELETE FROM redirections WHERE num = ${mysql.escape(num)};`);
@@ -376,10 +1712,20 @@ async function loadProblems() {
             await sql.query(`DELETE FROM problems WHERE num = ${mysql.escape(num)};`);
         }
         if ((await sql.query(`SELECT COUNT(1) FROM redirections WHERE num = ${mysql.escape(num)};`))[0][0]['COUNT(1)'] >= 1) {
-            await sql.query(`UPDATE redirections SET href = '${problem.redirect}' WHERE num = ${mysql.escape(num)};`);
+            await sql.query(`UPDATE redirections SET href = ${mysql.escape(problem.href)} WHERE num = ${mysql.escape(num)};`);
         } else {
-            await sql.query(`INSERT INTO redirections (num, href) values (${mysql.escape(num)}, '${problem.redirect}');`);
+            await sql.query(`INSERT INTO redirections (num, href) VALUES (${mysql.escape(num)}, ${mysql.escape(problem.href)});`);
         }
+    }
+    const [ rows1, fields1 ] = await sql.query(`SELECT num FROM problems;`);
+    const [ rows2, fields2 ] = await sql.query(`SELECT num FROM redirections;`);
+    for (idx in rows1) {
+        const num = rows1[idx].num;
+        if (!(num in content.problems)) await sql.query(`DELETE FROM problems WHERE num = ${mysql.escape(num)};`);
+    }
+    for (idx in rows2) {
+        const num = rows2[idx].num;
+        if (!(num in content.redirections)) await sql.query(`DELETE FROM redirections WHERE num = ${mysql.escape(num)};`);
     }
 }
 
@@ -389,9 +1735,9 @@ async function saveProblem(num, newProb) {
     content.problems[num] = newProb;
     await fs.writeFile('archive/problems.json', JSON.stringify(content));
     if ((await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(num)};`))[0][0]['COUNT(1)'] >= 1) {
-        await sql.query(`UPDATE problems SET title = '${newProb.title}', gradingStyle = '${newProb.gradingStyle}' WHERE num = ${mysql.escape(num)};`);
+        await sql.query(`UPDATE problems SET title = ${mysql.escape(newProb.title)}, gradingStyle = ${mysql.escape(newProb.gradingStyle)} WHERE num = ${mysql.escape(num)};`);
     } else {
-        await sql.query(`INSERT INTO problems (num, title, gradingStyle) values (${mysql.escape(num)}, '${newProb.title}', '${newProb.gradingStyle}');`);
+        await sql.query(`INSERT INTO problems (num, title, gradingStyle) VALUES (${mysql.escape(num)}, ${mysql.escape(newProb.title)}, ${mysql.escape(newProb.gradingStyle)});`);
     }
     if ((await sql.query(`SELECT COUNT(1) FROM redirections WHERE num = ${mysql.escape(num)};`))[0][0]['COUNT(1)'] >= 1) {
         await sql.query(`DELETE FROM redirections WHERE num = ${mysql.escape(num)};`);
@@ -407,9 +1753,9 @@ async function saveRedirection(num, newRedr) {
         await sql.query(`DELETE FROM problems WHERE num = ${mysql.escape(num)};`);
     }
     if ((await sql.query(`SELECT COUNT(1) FROM redirections WHERE num = ${mysql.escape(num)};`))[0][0]['COUNT(1)'] >= 1) {
-        await sql.query(`UPDATE redirections SET href = '${newRedr.redirect}' WHERE num = ${mysql.escape(num)};`);
+        await sql.query(`UPDATE redirections SET href = ${mysql.escape(newRedr.href)} WHERE num = ${mysql.escape(num)};`);
     } else {
-        await sql.query(`INSERT INTO redirections (num, href) values (${mysql.escape(num)}, '${newRedr.redirect}');`);
+        await sql.query(`INSERT INTO redirections (num, href) VALUES (${mysql.escape(num)}, ${mysql.escape(newRedr.href)});`);
     }
 }
 
@@ -422,29 +1768,100 @@ async function removeProblem(num) {
     await sql.query(`DELETE FROM redirections WHERE num = ${mysql.escape(num)}`);
 }
 
+function getHistory(title, user, type, arg) {
+    if (type === 'CRTPRB') return `${user} created new problem ${title}`;
+    else if (type === 'CRTRDR') return `${user} created new redirection ${title} → ${arg}`;
+    else if (type === 'EDTPRB') return `${user} edited the problem ${title}`;
+    else if (type === 'CRTDSC') return `${user} added the description ${arg} to the problem ${title}`;
+    else if (type === 'EDTDSC') return `${user} edited the description ${arg} of the problem ${title}`;
+    else if (type === 'RMVDSC') return `${user} removed the description ${arg} from the problem ${title}`;
+    else if (type === 'CRTSOL') return `${user} added the solution ${arg} to the problem ${title}`;
+    else if (type === 'EDTSOL') return `${user} edited the solution ${arg} of the problem ${title}`;
+    else if (type === 'RMVSOL') return `${user} removed the solution ${arg} from the problem ${title}`;
+    else if (type === 'EDTTTL') return `${user} renamed the problem ${title} → now ${arg}`;
+    else if (type === 'EDTGST') {
+        if (arg === 'ungradable') return `${user} reported ${title} now ungradable`;
+        else return `${user} reported ${title} now gradable with ${arg}`;
+    } else if (type === 'RMVPRB') return `${user} removed the problem ${title}`;
+    else if (type === 'RMVRDR') return `${user} removed the redirection ${title}`;
+    else if (type === 'EDTEXP') return `${user} edited examples of the problem ${title}`;
+    else if (type === 'ODRREV') return `${user} ordered reevaluation on the problem ${title}`;
+    else if (type === 'RMOVED') return `${user} moved the problem ${title} → now redirection towards ${arg}`;
+    else if (type === 'LMOVED') return `${user} moved the problem ${title} → ${arg}`;
+    else if (type === 'CRTPRV') return `${user} registered new providing ${arg} to the problem ${title}`;
+    else if (type === 'RMVPRV') return `${user} removed the providing ${arg} from the problem ${title}`;
+    else if (type === 'EDTPRV') return `${user} edited the providing ${arg} of the problem ${title}`;
+    else return `${user} triggered ${type} to the problem ${title}`;
+}
+
+async function addHistory(num, user, type, arg, diff) {
+    await sql.query(`INSERT INTO histories (problem, user, type, arg) VALUES (${mysql.escape(num)}, ${mysql.escape(user)}, ${mysql.escape(type)}, ${arg ? mysql.escape(arg) : '\'\''});`);
+    const [ rows, fields ] = await sql.query(`SELECT LAST_INSERT_ID();`);
+    const id = rows[0]['LAST_INSERT_ID()'];
+    await fs.writeFile(`changelog/${id}`, JSON.stringify(diff));
+}
+
+function makeExamples(examples, input, output) {
+    var exp_md = '</div>';
+    for (var i = 0; i < examples.length; i++) if (examples[i].use) exp_md += `<div class="examplewrap"><div class="example"><div class="input"><div class="marked">## ${input}${i + 1}</div><div class="marked code">${examples[i].input}</div></div><div class="output"><div class="marked">## ${output}${i + 1}</div><div class="marked code">${examples[i].output}</div></div></div></div><div class="marked">${examples[i].desc}</div>`;
+    exp_md += '<div class="marked">';
+    return exp_md;
+}
+
+function replaceExamples(content, examples) {
+    const matches = [ ...content.matchAll('\\[\\[examples:.*:.*\\]\\]') ];
+    matches.forEach(function (item) {
+        const cont = item.toString();
+        var inner = cont.substr(2, cont.length - 4).split(':');
+        content = content.replace(cont, makeExamples(examples, inner[1], inner[2]));
+    });
+    return content;
+}
+
 io.on('connection', function (socket) {
     socketList[socket.id] = {
         time: Date.now()
     };
     socket.on('disconnect', function () {
-        if (socketList[socket.id].id && idSockets[socketList[socket.id].id]) {
-            var k = idSockets[socketList[socket.id].id].indexOf(socket.id);
-            if (k != -1)idSockets[socketList[socket.id].id].splice(k, 1);
-            if (idSockets[socketList[socket.id].id].length == 0) delete idSockets[socketList[socket.id].id];
+        if (socketList[socket.id].id) {
+            if (socketList[socket.id].type === 'ioiSimple' && idSockets[socketList[socket.id].id]) {
+                var k = idSockets[socketList[socket.id].id].indexOf(socket.id);
+                if (k != -1)idSockets[socketList[socket.id].id].splice(k, 1);
+                if (idSockets[socketList[socket.id].id].length == 0) delete idSockets[socketList[socket.id].id];
+            }
+            if (socketList[socket.id].type === 'checker') delete checkerSocket[socketList[socket.id].id];
         }
         delete socketList[socket.id];
     });
     socket.on('id', async function (data) {
-        if (socketList[socket.id].id) return;
-        socketList[socket.id].id = data;
-        if (!idSockets[data]) idSockets[data] = [ ];
-        if (!idSockets[data].includes(socket.id)) idSockets[data].push(socket.id);
-        const [ rows, fields ] = await sql.query(`SELECT cnt, id, user, result, problem, time, memory, submitDate FROM submissions WHERE id = '${data}'`);
-        if (rows.length > 0) socket.emit('updt', {
-            result: getResult(rows[0].result),
-            time: rows[0].time,
-            mem: rows[0].memory
-        });
-    })
+        if (data.type === 'ioiSimple') {
+            if (socketList[socket.id].id) return;
+            socketList[socket.id].id = data.id;
+            socketList[socket.id].type = data.type;
+            if (!idSockets[data.id]) idSockets[data.id] = [ ];
+            if (!idSockets[data.id].includes(socket.id)) idSockets[data.id].push(socket.id);
+            const [ rows, fields ] = await sql.query(`SELECT cnt, id, user, result, problem, time, memory, submitDate FROM submissions WHERE id = ${mysql.escape(data.id)};`);
+            if (rows.length > 0) socket.emit('updt', {
+                result: getResult(rows[0].result),
+                time: rows[0].time,
+                mem: rows[0].memory
+            });
+        } else if (data.type === 'checker') {
+            if (socketList[socket.id].id) return;
+            socketList[socket.id].id = data.id;
+            socketList[socket.id].type = data.type;
+            checkerSocket[data.id] = socket.id;
+            const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM checkers WHERE file = ${mysql.escape(data.id)};`);
+            if (rows[0]['COUNT(1)'] > 0) socket.emit('updt', {
+                result: 'AC'
+            });
+            try {
+                await fs.readFile(`grading/messages/${data.out}`);
+                socket.emit('updt', {
+                    result: 'CE'
+                });
+            } catch (e) { }
+        }
+    });
     socket.emit('hello');
 });

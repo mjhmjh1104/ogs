@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>OGS</title>
+    <style>
+        .description {
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <h1>Descriptions of <%= num %></h1>
+<% if (descriptions && descriptions.length > 0) { %>
+    <form method="POST" action="/description/<%= num %>/delete" accept-charset="utf-8">
+        <select name="descriptions" id="versions" onchange="changeContent();">
+<% descriptions.forEach(function (item, idx) { %>
+            <option value="<%= idx %>" <% if (idx == 0) { %>selected<% } %>><%= item.name %></option>
+<% }); %>
+        </select>
+        <button type="submit">Delete</button>
+<% descriptions.forEach(function (item, idx) { %>
+        <div class="description" id="<%= idx %>" <% if (idx != 0) { %>style="display: none;"<% } %>>
+            <a href="/description/<%= num %>/edit/<%= idx %>"><button type="button">Edit</button></a>
+            <span>Type: <%= item.type %></span>
+            <span>Lang: <%= item.lang %></span>
+            <% if (item.type === 'md') { %><span>filename: <%= item.filename %></span><% } %><% if (item.type === 'pdf') { %><span>path: <%= item.path %></span><% } %>
+        </div>
+<% }); %>
+    </form>
+<% } %>
+    <a href="/description/<%= num %>/add"><button>Add</button></a>
+    <a href="/view/<%= num %>">Back</a>
+
+    <script src="//code.jquery.com/jquery-1.12.4.min.js"></script>
+    <script>
+        function changeContent () {
+            $(".description").hide();
+            $(`#${$("#versions").find(":selected").val()}`).show();
+        }
+    </script>
+</body>
+</html>

@@ -69,16 +69,32 @@ parentPort.on('message', async function (msg) {
             workerNum: data.workerNum,
             data: 'busy'
         });
-        const res = await grade(msg.content);
-        parentPort.postMessage({
-            workerNum: data.workerNum,
-            data: 'updt',
-            content: {
-                id: msg.content.filename,
-                problem: msg.content.problem,
-                result: res
-            }
-        });
+        if (msg.content.type === 'ioiSimple') {
+            const res = await grade(msg.content);
+            parentPort.postMessage({
+                workerNum: data.workerNum,
+                data: 'updt',
+                content: {
+                    id: msg.content.filename,
+                    problem: msg.content.problem,
+                    type: msg.content.type,
+                    result: res
+                }
+            });
+        } else if (msg.content.type === 'checker') {
+            const res = await compile(msg.content);
+            parentPort.postMessage({
+                workerNum: data.workerNum,
+                data: 'updt',
+                content: {
+                    id: msg.content.filename,
+                    type: msg.content.type,
+                    result: res,
+                    description: msg.content.description,
+                    out: msg.content.out
+                }
+            });
+        }
         parentPort.postMessage({
             workerNum: data.workerNum,
             data: 'free'
@@ -86,13 +102,14 @@ parentPort.on('message', async function (msg) {
     }
 });
 
-function tmpResult(res, id) {
+function tmpResult(res, id, type) {
     parentPort.postMessage({
         workerNum: data.workerNum,
         data: 'updt',
         content: {
             id: id,
-            result: res
+            result: res,
+            type: type
         }
     });
 }
@@ -120,15 +137,15 @@ async function grade(submission) {
         tmpResult({
             result: 'RD',
             done: 0
-        }, submission.filename);
-        await exec(`yes | rm -rf grading/isolate/${data.workerNum}/*`);
-        await exec(`cp grading/compilers/c++20.sh grading/isolate/${data.workerNum}/compile.sh`);
-        await exec(`cp grading/submissions/${submission.filename} grading/isolate/${data.workerNum}/submission.cpp`);
-        await exec(`cp grading/checkers/diff.cpp grading/isolate/${data.workerNum}/checker.cpp`);
+        }, submission.filename, submission.type);
+        await exec(`yes | rm -rf grading/isolate/"${data.workerNum}"/*`);
+        await exec(`cp "grading/compilers/c++20.sh" "grading/isolate/${data.workerNum}/compile.sh"`);
+        await exec(`cp "grading/submissions/${submission.filename}" "grading/isolate/${data.workerNum}/submission.cpp"`);
+        await exec(`cp "grading/checkers/diff.cpp" "grading/isolate/${data.workerNum}/checker.cpp"`);
         tmpResult({
             result: 'CP',
             done: 0
-        }, submission.filename);
+        }, submission.filename, submission.type);
         try {
             await isolateExec('/files/compile.sh', '/files/checker.cpp /files/checker', 10, 21, 512 * 1024 * 1024, 1000, COMPILE_CHECKER_LOG);
         } catch (e) {
@@ -156,14 +173,14 @@ async function grade(submission) {
         tmpResult({
             result: 'FD',
             done: 0
-        }, submission.filename);
+        }, submission.filename, submission.type);
         await decompress(`archive/${submission.problem}/data.zip`, `grading/isolate/${data.workerNum}/archive`);
-        await exec(`cp archive/${submission.problem}/info.json grading/isolate/${data.workerNum}/archive/info.json`);
+        await exec(`cp "archive/${submission.problem}/info.json" "grading/isolate/${data.workerNum}/archive/info.json"`);
         const info = JSON.parse(await fs.readFile(`grading/isolate/${data.workerNum}/archive/info.json`));
         tmpResult({
             result: 'GD',
             done: 0
-        }, submission.filename);
+        }, submission.filename, submission.type);
         for (idx in info.data) {
             const curr = parseInt(idx);
             var cnt = info.data[idx];
@@ -218,7 +235,7 @@ async function grade(submission) {
                 tmpResult({
                     result: 'GD',
                     done: (curr + 1) / info.data.length
-                }, submission.filename);
+                }, submission.filename, submission.type);
             }
         }
     } catch (e) {
@@ -232,5 +249,31 @@ async function grade(submission) {
         time: totaltime,
         walltime: totalwalltime,
         mem: totalmem
+    };
+}
+
+async function compile(submission) {
+    const COMPILE_CHECKER_LOG = `grading/isolate/${data.workerNum}/compile_checker.log`;
+    var r = 'AC';
+    try {
+        await exec(`yes | rm -rf grading/isolate/"${data.workerNum}"/*`);
+        await exec(`cp "grading/compilers/c++20.sh" "grading/isolate/${data.workerNum}/compile.sh"`);
+        await exec(`cp "grading/checkers/${submission.filename}.cpp" "grading/isolate/${data.workerNum}/checker.cpp"`);
+        try {
+            await isolateExec('/files/compile.sh', '/files/checker.cpp /files/checker --stderr=/files/compile.out', 10, 21, 512 * 1024 * 1024, 1000, COMPILE_CHECKER_LOG);
+        } catch (e) {
+            await exec(`cp "grading/isolate/${data.workerNum}/compile.out" "grading/messages/${submission.out}"`);
+            return {
+                result: 'FL'
+            };
+        }
+    } catch (e) {
+        console.log(e);
+        return {
+            result: 'FL'
+        };
+    }
+    return {
+        result: r
     };
 }

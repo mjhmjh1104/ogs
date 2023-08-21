@@ -17,6 +17,7 @@
   },
   "homepage": "https://github.com/mjhmjh1104/ogs#readme",
   "dependencies": {
+    "archiver": "^6.0.0",
     "bcrypt": "^5.1.0",
     "body-parser": "^1.20.2",
     "child_process": "^1.0.2",
@@ -25,7 +26,9 @@
     "decompress": "^4.2.1",
     "ejs": "^3.1.9",
     "express": "^4.18.2",
+    "express-fileupload": "^1.4.0",
     "express-session": "^1.17.3",
+    "multer": "^1.4.5-lts.1",
     "mysql2": "^2.3.3",
     "socket.io": "^4.7.2"
   },

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>OGS</title>
+    <style>
+        .condition {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Add Description of <%= num %></h1>
+<% if (error) { %><span style="color: red;"><%= error %></span><% } %>
+    <form method="POST" action="/description/<%= num %>/add" accept-charset="utf-8"  enctype="multipart/form-data">
+        <input type="hidden" name="edit" value="<%= data.edit ? data.edit : 'false' %>">
+        <input type="hidden" name="pidx" value="<%= data.pidx ? data.pidx : '' %>">
+        Language: <input type="text" name="lang" value="<%= data.lang %>"><br>
+        Name: <input type="text" name="desc" value="<%= data.desc %>"><br>
+        <input type="radio" name="type" value="md" id="md" <% if (data.type === 'md') { %>checked<% } %>>md
+        <input type="radio" name="type" value="pdf" id="pdf" <% if (data.type === 'pdf') { %>checked<% } %>>pdf
+        <div class="condition" id="followMd" <% if (data.type === 'md') { %>style="display: block;"<% } %>>
+            Mark examples by [[examples:Sample Input :Sample Output ]].<br>
+            Description <textarea name="md"><%= data.md %></textarea><br>
+            Filename <input type="text" name="file" value="<%= data.file %>"></textarea><br>
+            <button type="submit">Submit</button>
+        </div>
+        <div class="condition" id="followPdf" <% if (data.type === 'pdf') { %>style="display: block;"<% } %>>
+            <select name="pdf">
+    <% (providing ? providing : []).forEach(function (item, idx) { %>
+                <option value="<%= item %>" <% if ((!data.pdf && idx == 0) || (data.pdf === item)) { %>selected<% } %>><%= item %></option>
+    <% }); %>
+            </select>
+            <button type="submit">Submit</button>
+        </div>
+    </form>
+    <a href="/description/<%= num %>">Back</a>
+
+    <script src="//code.jquery.com/jquery-1.12.4.min.js"></script>
+    <script>
+        function hideType() {
+            $('#followMd').hide();
+            $('#followPdf').hide();
+        }
+        $('#md').change(function () {
+            hideType();
+            $('#followMd').show();
+        });
+        $('#pdf').change(function () {
+            hideType();
+            $('#followPdf').show();
+        });
+    </script>
+</body>
+</html>

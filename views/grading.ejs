@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="//code.jquery.com/jquery-1.12.4.min.js"></script>
+    <title>OGS</title>
+    <style>
+        .description {
+            white-space: pre-wrap;
+        }
+        iframe {
+            width: 800px;
+            height: 1000px;
+        }
+        *:not(.MJX-TEX *) {
+            font-family: sans-serif;
+            color: #333;
+        }
+        *, p, ul, ol, li {
+            margin: 0;
+            margin-block: 0;
+        }
+        p {
+            line-height: 30px;
+        }
+        li {
+            margin-top: -5px;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+        th, td {
+            border: 1px #888 solid;
+            padding: 12px 15px;
+        }
+        .container {
+            margin: 100px auto;
+            width: 850px;
+        }
+        h1, h2, h3, h4, h5, h6 {
+            border-bottom: 1px #ccc solid;
+            margin-bottom: 15px;
+        }
+        code, .code {
+            border: 1px #aaa solid;
+            padding: 5px 10px;
+            background-color: #eee;
+            font-family: 'Menlo', 'Consolas', Arial, sans-serif !important;
+        }
+        code {
+            display: inline-block;
+            line-height: normal;
+        }
+        .code {
+            display: block;
+        }
+        .code * {
+            font-family: 'Menlo', 'Consolas', Arial, sans-serif !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Grading of <%= num %></h1>
+        <form method="POST" action="/grading/<%= num %>" accept-charset="utf-8" enctype="multipart/form-data">
+            Subtasks:
+            <table id="subtask">
+                <tr>
+                    <th>#</th>
+                    <th>TL</th>
+                    <th>WL</th>
+                    <th>ML</th>
+                    <th>Hierarchy</th>
+                    <th>Dataset</th>
+                    <th>Regex</th>
+                    <th>Validator</th>
+                    <th>Checker</th>
+                    <th>Marks</th>
+                    <th>Functions</th>
+                </tr>
+            </table>
+            <button type="button" onclick="addSubtask();">Add</button>
+            Languages:
+            <table id="languages">
+                <tr>
+                    <th>#</th>
+                    <th>Language</th>
+                    <th>Command</th>
+                    <th>Submitting Files</th>
+                    <th>Sample Code</th>
+                    <th>Necessary Helpers</th>
+                    <th>Functions</th>
+                </tr>
+            </table>
+            <button type="button" onclick="addLanguage();">Add</button>
+            <!-- <button type="submit">Apply</button> -->
+        </form>
+        <a href="/view/<%= num %>">Back</a>
+    </div>
+
+    <script>
+        function swap(x, y) {
+            var sib = y.nextSibling === x ? y : y.nextSibling;
+            x.parentNode.insertBefore(y, x);
+            y.parentNode.insertBefore(x, sib);
+            // reenumerate();
+        }
+        // function reenumerate() {
+        //     var len = $('#examples tr:gt(0)').length;
+        //     $('#examples tr:gt(0)').each(function (idx) {
+        //         $(this).find('td:eq(0)').html(idx + 1);
+        //         $(this).find('td:eq(1) textarea').attr('name', idx + 'input');
+        //         $(this).find('td:eq(2) textarea').attr('name', idx + 'output');
+        //         $(this).find('td:eq(3) textarea').attr('name', idx + 'desc');
+        //         $(this).find('td:eq(4) input:eq(0)').attr('name', idx + 'enabled');
+        //         $(this).find('td:eq(4) input:eq(1)').attr('name', idx + 'use');
+        //         $(this).find('td:eq(4) button:eq(0)').off('click');
+        //         $(this).find('td:eq(4) button:eq(0)').click(function () {
+        //             $(`#examples tr:gt(0):eq(${idx})`).remove();
+        //             reenumerate();
+        //         });
+        //         $(this).find('td:eq(4) button:gt(0)').remove();
+        //         if (idx > 0) $(this).find('td:eq(4)').append(`<button type="button" onclick="swap($(\'#examples tr:gt(0):eq(${idx})\').get(0), $(\'#examples tr:gt(0):eq(${idx - 1})\').get(0))">Up</button>`);
+        //         if (idx < len - 1) $(this).find('td:eq(4)').append(`<button type="button" onclick="swap($(\'#examples tr:gt(0):eq(${idx})\').get(0), $(\'#examples tr:gt(0):eq(${idx + 1})\').get(0))">Down</button>`);
+        //     });
+        // }
+        function addSubtask() {
+            $('#subtask tr:last').after('<tr><td>0</td><td><input type="text"> ms</td><td><input type="text"> ms</td><td><input type="text"> bytes</td><td><input type="text"></td><td><select></select></td><td><input type="text"></td><td><select></select></td><td><select></select></td><td><input type="text"></td><td><button type="button">Delete</button></td></tr>');
+            // reenumerate();
+        }
+        reenumerate();
+    </script>
+</body>
+</html>

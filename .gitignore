@@ -1,5 +1,7 @@
 node_modules
 archive
 grading/submissions
+grading/messages
 config.json
 grading/isolate
+changelog

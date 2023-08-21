@@ -4,7 +4,10 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script src="//code.jquery.com/jquery-1.12.4.min.js"></script>
-    <title>OGS</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <title><%= info.title %></title>
     <style>
         .description {
             white-space: pre-wrap;
@@ -63,35 +66,38 @@
 </head>
 <body>
     <div class="container">
-        <h1>Welcome to OGS</h1>
-    <% if (!user) { %>
-        <a href="/signin">Sign in</a>
-    <% } else { %>
-        <p>Hello <%= user.user %></p>
-        <a href="/signout">Sign out</a>
-    <% } %>
-        <a href="/users">Users</a>
-        <a href="/submissions">Submissions</a><br>
-    <% if (user && user.admin) { %><p>You are admin <a href="/checkers">Checkers</a> <a href="/redirections">Redirections</a><br></p><% } %>
-        <table>
-            <tr>
-                <td>#</td>
-                <td>Title</td>
-                <td>Grading Style</td>
-                <td># Submissions</td>
-                <td># Acceptions</td>
-            </tr>
-    <% problems.forEach(function (item) { %>
-            <tr>
-                <td><%= item.num %></td>
-                <td><a href="/view/<%= item.num %>"><%= item.title %></a></td>
-                <td><%= item.gradingStyle %></td>
-                <td><%= item.submitCnt %></td>
-                <td><%= item.correctCnt %></td>
-            </tr>
+        <h1><%= info.title %></h1>
+        <p>Solutions <select id="versions" onchange="changeContent();">
+    <% contents.forEach(function (item, idx) { %>
+            <option value="<%= idx %>" <% if (idx == 0) { %>selected<% } %>><%= item.name %></option>
     <% }); %>
-        </table>
-        <input type="text" id="go"><button onclick="window.location.href = '/view/' + $('#go').val();">Go</button>
+        </select></p>
+    <% contents.forEach(function (item, idx) { %>
+    <% if (item.type === 'md') { %>
+        <div class="solution marked" id="<%= idx %>" <% if (idx != 0) { %>style="display: none;"<% } %>><%= item.content %></div>
+    <% } else { %>
+        <iframe class="solution" id="<%= idx %>" src="/view/<%= num %>/providing/<%= item.content %>" title="<%= item.name %>" <% if (idx != 0) { %>style="display: none;"<% } %>></iframe>
+    <% } %>
+    <% }); %>
+        <br>
+        <a href="/view/<%= num %>">Back</a>
     </div>
+
+    <script>
+        function changeContent () {
+            $(".solution").hide();
+            $(`#${$("#versions").find(":selected").val()}`).show();
+        }
+    </script>
+    <script>
+        $('.marked').each(function () {
+            $(this).html(marked.parse($(this).html()));
+        });
+    </script>
+    <script>
+        MathJax = {
+            tex: { inlineMath: [ [ '$', '$' ], [ '\\(', '\\)' ] ] }
+        };
+    </script>
 </body>
 </html>
