@@ -136,9 +136,9 @@
                 contentType: false,
                 processData: false,
                 success: function (data) {
-                    window.location.href = '/data/<%= num %>';
+                    if (data.type === 'redirect') window.location.href = data.url;
                 }
-            })
+            });
         }
 
 

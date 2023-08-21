@@ -90,8 +90,7 @@ parentPort.on('message', async function (msg) {
                     id: msg.content.filename,
                     type: msg.content.type,
                     result: res,
-                    description: msg.content.description,
-                    out: msg.content.out
+                    description: msg.content.description
                 }
             });
         }
@@ -262,9 +261,9 @@ async function compile(submission) {
         try {
             await isolateExec('/files/compile.sh', '/files/checker.cpp /files/checker --stderr=/files/compile.out', 10, 21, 512 * 1024 * 1024, 1000, COMPILE_CHECKER_LOG);
         } catch (e) {
-            await exec(`cp "grading/isolate/${data.workerNum}/compile.out" "grading/messages/${submission.out}"`);
             return {
-                result: 'FL'
+                result: 'FL',
+                log: (await fs.readFile(`grading/isolate/${data.workerNum}/compile.out`)).toString()
             };
         }
     } catch (e) {

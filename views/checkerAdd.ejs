@@ -13,37 +13,66 @@
 <body>
     <h1>Add Checker</h1>
     <form method="POST" action="/checkers/add" accept-charset="utf-8" id="form" enctype="multipart/form-data">
-<% if (error) { %><span style="color: red;"><%= error %></span><br><% } %>
-<% if (stderr) { %><code style="color: red;"><%= stderr %></code><% } %>
-<% if (message) { %><span style="color: blue;"><%= message %></span><br><% } %>
-        Filename <input type="text" name="file" value="<%= data.file %>" <% if (message === 'Compiling...') { %>readonly<% } %>>.cpp<br>
-        Description <input type="text" name="description" value="<%= data.description %>" <% if (message === 'Compiling...') { %>readonly<% } %>><br>
-        Code <textarea name="code" <% if (message === 'Compiling...') { %>readonly<% } %>><%= data.code %></textarea><br>
-        <input type="hidden" name="out" value="<% if (message === 'Compiling...') { %><%= out %><% } %>">
-<% if (message !== 'Compiling...') { %><button type="submit">Submit</button><% } %>
+        <span id="error" style="color: red;"></span>
+        <span id="message" style="color: blue;"></span><br>
+        <code id="stderr" style="color: red;"></code><br>
+        Filename <input type="text" name="file" value="<%= data.file %>">.cpp<br>
+        Description <input type="text" name="description" value="<%= data.description %>"><br>
+        Code <textarea name="code"><%= data.code %></textarea><br>
     </form>
+    <button type="button" onclick="submit();">Submit</button>
     <a href="/checkers">Back</a>
-<% if (message === 'Compiling...') { %>
+
     <script src="/socket.io/socket.io.js"></script>
     <script src="//code.jquery.com/jquery-1.12.4.min.js"></script>
     <script>
         var socket = io();
-        socket.on('hello', function (data) {
+
+        function submit() {
+            $('button').attr('disabled', true);
+            $('#form input, #form textarea').attr('readonly', true);
             socket.emit('id', {
-                id: '<%= data.file %>',
+                id: $('#form input[name=file]').val(),
                 type: 'checker',
-                description: '<%= data.description %>',
-                out: '<%= out %>'
+                description: $('#form input[name=description]').val()
             });
-            setTimeout(function () {
-                $("#form").submit();
-            }, 20000);
-        });
+            var formData = new FormData ();
+            $('#form').serializeArray().forEach(function (item) {
+                formData.append(item.name, item.value);
+            });
+            $.ajax({
+                url: '/checkers/add',
+                data: formData,
+                type: 'POST',
+                contentType: false,
+                processData: false,
+                success: function (data) {
+                    if (data.type === 'redirect') window.location.href = data.url;
+                    if (data.type === 'done') {
+                        $('#error').html('');
+                        $('#stderr').html('');
+                        $('#message').html(data.message);
+                    }
+                    if (data.type === 'error') {
+                        $('#error').html(data.error);
+                        $('#message').html('');
+                        $('button').attr('disabled', false);
+                        $('#form input, #form textarea').attr('readonly', false);
+                    }
+                }
+            });
+        }
+
         socket.on('updt', function (data) {
-            if (data.result === 'AC') window.location.href = '/checkers';
-            else $("#form").submit();
+            if (data.result.result === 'AC') window.location.href = '/checkers';
+            else {
+                $('#error').html('Compilation failed');
+                $('#stderr').html(data.result.log);
+                $('#message').html('');
+                $('button').attr('disabled', false);
+                $('#form input, #form textarea').attr('readonly', false);
+            }
         });
     </script>
-<% } %>
 </body>
 </html>

@@ -486,67 +486,42 @@ app.get('/checkers/add', async function (req, res) {
     if (!req.session.auth) return res.redirect('/signin');
     if (!req.session.auth.admin) return res.redirect('/');
     res.render('checkerAdd', {
-        error: '',
-        stderr: '',
-        message: '',
-        data: {},
-        out: ''
+        data: {}
     });
 });
 
 app.post('/checkers/add', async function (req, res) {
-    if (!req.session.auth) return res.redirect('/signin');
-    if (!req.session.auth.admin) return res.redirect('/');
-    if (req.body.out && !inappropriate(req.body.out)) {
-        var message = '';
-        try {
-            message = await fs.readFile(`grading/messages/${req.body.out}`);
-        } catch (e) { }
-        return res.render('checkerAdd', {
-            error: 'Compilation failed',
-            stderr: message,
-            message: '',
-            data: req.body,
-            out: ''
-        });
-    }
-    if (inappropriate(req.body.file)) return res.render('checkerAdd', {
-        error: 'Filename is prohibited',
-        stderr: '',
-        message: '',
-        data: req.body,
-        out: ''
+    if (!req.session.auth) return res.json({
+        type: 'redirect',
+        url: '/signin'
     });
-    if (req.body.file.length <= 0) return res.render('checkerAdd', {
-        error: 'Filename is empty',
-        stderr: '',
-        message: '',
-        data: req.body,
-        out: ''
+    if (!req.session.auth.admin) return res.json({
+        type: 'redirect',
+        url: '/'
+    });
+    if (inappropriate(req.body.file)) return res.json({
+        type: 'error',
+        error: 'Filename is prohibited'
+    });
+    if (req.body.file.length <= 0) return res.json({
+        type: 'error',
+        error: 'Filename is empty'
     });
     const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM checkers WHERE file = ${mysql.escape(req.body.file)}`);
-    if (rows[0]['COUNT(1)'] > 0) return res.render('checkerAdd', {
-        error: 'File already exists',
-        stderr: '',
-        message: '',
-        data: req.body,
-        out: ''
+    if (rows[0]['COUNT(1)'] > 0) return res.json({
+        type: 'error',
+        error: 'File already exists'
     });
     await fs.writeFile(`grading/checkers/${req.body.file}.cpp`, req.body.code);
-    const id = genID();
     queue.push({
         type: 'checker',
         filename: req.body.file,
-        description: req.body.description,
-        out: id
+        description: req.body.description
     });
     tryGrading();
-    return res.render('checkerAdd', {
-        error: '',
-        stderr: '',
-        message: 'Compiling...',
-        data: req.body,
-        out: id
+    return res.json({
+        type: 'done',
+        message: 'Compiling...'
     });
 });
 
@@ -1437,25 +1412,46 @@ function omitExtension(x) {
 }
 
 app.post('/data/:num/add', async function (req, res) {
-    if (!req.session.auth) return res.redirect('/signin');
-    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    if (!req.session.auth) return res.json({
+        type: 'redirect',
+        url: '/signin'
+    });
+    if (!req.session.auth.admin) return res.json({
+        type: 'redirect',
+        url: `/view/${req.params.num}`
+    });
     const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
-    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
-    if (!req.body.desc) return res.redirect(`/data/${req.params.num}`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.json({
+        type: 'redirect',
+        url: '/'
+    });
+    if (!req.body.desc) return res.json({
+        type: 'redirect',
+        url: `/data/${req.params.num}`
+    });
     var data = [];
     try {
         data = JSON.parse(await fs.readFile(`archive/${req.params.num}/data.json`));
     } catch (e) { }
     var k = -1;
     var oldData = {};
+    for (var i = 0; i < data.length; i++) if (data[i].name === req.body.desc) k = i;
+    if (k != -1 && (req.body.edit !== 'true' || k !== parseInt(req.body.pidx))) return res.json({
+        type: 'redirect',
+        url: `/data/${req.params.num}`
+    });
     if (req.body.edit === 'true') {
-        if (parseInt(req.body.pidx) != req.body.pidx) return res.redirect(`/data/${req.params.num}`);
-        if (data.length <= req.body.pidx || req.body.pidx < 0) return res.redirect(`/data/${req.params.num}`);
+        if (parseInt(req.body.pidx) != req.body.pidx) return res.json({
+            type: 'redirect',
+            url: `/data/${req.params.num}`
+        });
+        if (data.length <= req.body.pidx || req.body.pidx < 0) return res.json({
+            type: 'redirect',
+            url: `/data/${req.params.num}`
+        });
         oldData = data[req.body.pidx];
         data.splice(req.body.pidx, 1);
     }
-    for (var i = 0; i < data.length; i++) if (data[i].name === req.body.desc) k = i;
-    if (k != -1 && req.body.edit !== 'true') return res.redirect(`/data/${req.params.num}`);
     await fs.rmdir(`archive/${req.params.num}/data/tmp`, {
         recursive: true,
         force: true
@@ -1526,7 +1522,10 @@ app.post('/data/:num/add', async function (req, res) {
         recursive: true,
         force: true
     });
-    res.redirect(`/data/${req.params.num}`);
+    return res.json({
+        type: 'redirect',
+        url: `/data/${req.params.num}`
+    });
 });
 
 app.get('/grading/:num', async function (req, res) {
@@ -1623,9 +1622,13 @@ const workerNum = 3;
                     if (msg.content.result.result === 'AC') {
                         const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM checkers WHERE file = ${mysql.escape(msg.content.id)};`);
                         if (rows[0]['COUNT(1)'] <= 0) await sql.query(`INSERT INTO checkers (file, description) VALUES (${mysql.escape(msg.content.id)}, ${mysql.escape(msg.content.description)});`);
+                    } else {
+                        try {
+                            await fs.unlink(`grading/checkers/${msg.content.id}.cpp`);
+                        } catch (e) { }
                     }
                     if (checkerSocket[msg.content.id]) io.to(checkerSocket[msg.content.id]).emit('updt', {
-                        result: msg.content.result.result
+                        result: msg.content.result
                     });
                 }
             }
@@ -1818,22 +1821,29 @@ function replaceExamples(content, examples) {
     return content;
 }
 
+function erase(x) {
+    if (socketList[x] === undefined) return;
+    if (socketList[x].id) {
+        if (socketList[x].type === 'ioiSimple' && idSockets[socketList[x].id]) {
+            var k = idSockets[socketList[x].id].indexOf(x);
+            if (k != -1) idSockets[socketList[x].id].splice(k, 1);
+            if (idSockets[socketList[x].id].length == 0) delete idSockets[socketList[x].id];
+        }
+        if (socketList[x].type === 'checker') delete checkerSocket[socketList[x].id];
+    }
+    delete socketList[x].id;
+}
+
 io.on('connection', function (socket) {
     socketList[socket.id] = {
         time: Date.now()
     };
     socket.on('disconnect', function () {
-        if (socketList[socket.id].id) {
-            if (socketList[socket.id].type === 'ioiSimple' && idSockets[socketList[socket.id].id]) {
-                var k = idSockets[socketList[socket.id].id].indexOf(socket.id);
-                if (k != -1)idSockets[socketList[socket.id].id].splice(k, 1);
-                if (idSockets[socketList[socket.id].id].length == 0) delete idSockets[socketList[socket.id].id];
-            }
-            if (socketList[socket.id].type === 'checker') delete checkerSocket[socketList[socket.id].id];
-        }
-        delete socketList[socket.id];
+        erase(socket.id);
+        if (socketList[socket.id] !== undefined) delete socketList[socket.id];
     });
     socket.on('id', async function (data) {
+        erase(socket.id);
         if (data.type === 'ioiSimple') {
             if (socketList[socket.id].id) return;
             socketList[socket.id].id = data.id;
@@ -1851,16 +1861,6 @@ io.on('connection', function (socket) {
             socketList[socket.id].id = data.id;
             socketList[socket.id].type = data.type;
             checkerSocket[data.id] = socket.id;
-            const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM checkers WHERE file = ${mysql.escape(data.id)};`);
-            if (rows[0]['COUNT(1)'] > 0) socket.emit('updt', {
-                result: 'AC'
-            });
-            try {
-                await fs.readFile(`grading/messages/${data.out}`);
-                socket.emit('updt', {
-                    result: 'CE'
-                });
-            } catch (e) { }
         }
     });
     socket.emit('hello');
