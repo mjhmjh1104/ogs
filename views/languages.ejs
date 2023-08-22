@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>OGS</title>
+</head>
+<body>
+    <h1>Languages</h1>
+<% if (languages && languages.length > 0) { %>
+    <form method="POST" action="/languages/delete" accept-charset="utf-8">
+        <select name="languages" id="languages" onchange="changeContent();">
+<% languages.forEach(function (item, idx) { %>
+            <option value="<%= item.id %>"><%= item.name %></option>
+<% }); %>
+        </select>
+        <button type="submit">Delete</button>
+<% languages.forEach(function (item, idx) { %>
+        <div class="language" id="<%= item.id %>" <% if (idx != 0) { %>style="display: none;"<% } %>>
+            <a href="/languages/edit/<%= item.id %>"><button type="button">Edit</button></a><br>
+            <span>Id: <%= item.id %></span><br>
+            <span>Submitting Files: <% item.submittings.forEach(function (item) { %><%= item %>, <% }); %></span><br>
+            <span>Arguments: <%= item.args %></span>
+        </div>
+<% }); %>
+    </form>
+<% } %>
+    <a href="/languages/add"><button type="button">Add</button></a>
+    <a href="/">Main</a>
+
+    <script src="//code.jquery.com/jquery-1.12.4.min.js"></script>
+    <script>
+        function changeContent () {
+            $(".language").hide();
+            $(`#${$("#languages").find(":selected").val()}`).show();
+        }
+    </script>
+</body>
+</html>

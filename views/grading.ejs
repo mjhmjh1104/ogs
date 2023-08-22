@@ -59,6 +59,11 @@
         .code * {
             font-family: 'Menlo', 'Consolas', Arial, sans-serif !important;
         }
+        .cross {
+            margin-left: 5px;
+            font-size: 15px;
+            color: red;
+        }
     </style>
 </head>
 <body>
@@ -82,16 +87,19 @@
                 </tr>
             </table>
             <button type="button" onclick="addSubtask();">Add</button>
+            <br>
             Languages:
             <table id="languages">
                 <tr>
                     <th>#</th>
                     <th>Language</th>
                     <th>Command</th>
+                    <th>Arguments</th>
                     <th>Submitting Files</th>
                     <th>Sample Code</th>
                     <th>Necessary Helpers</th>
                     <th>Functions</th>
+                    <th>Test</th>
                 </tr>
             </table>
             <button type="button" onclick="addLanguage();">Add</button>
@@ -107,30 +115,63 @@
             y.parentNode.insertBefore(x, sib);
             // reenumerate();
         }
-        // function reenumerate() {
-        //     var len = $('#examples tr:gt(0)').length;
-        //     $('#examples tr:gt(0)').each(function (idx) {
-        //         $(this).find('td:eq(0)').html(idx + 1);
-        //         $(this).find('td:eq(1) textarea').attr('name', idx + 'input');
-        //         $(this).find('td:eq(2) textarea').attr('name', idx + 'output');
-        //         $(this).find('td:eq(3) textarea').attr('name', idx + 'desc');
-        //         $(this).find('td:eq(4) input:eq(0)').attr('name', idx + 'enabled');
-        //         $(this).find('td:eq(4) input:eq(1)').attr('name', idx + 'use');
-        //         $(this).find('td:eq(4) button:eq(0)').off('click');
-        //         $(this).find('td:eq(4) button:eq(0)').click(function () {
-        //             $(`#examples tr:gt(0):eq(${idx})`).remove();
-        //             reenumerate();
-        //         });
-        //         $(this).find('td:eq(4) button:gt(0)').remove();
-        //         if (idx > 0) $(this).find('td:eq(4)').append(`<button type="button" onclick="swap($(\'#examples tr:gt(0):eq(${idx})\').get(0), $(\'#examples tr:gt(0):eq(${idx - 1})\').get(0))">Up</button>`);
-        //         if (idx < len - 1) $(this).find('td:eq(4)').append(`<button type="button" onclick="swap($(\'#examples tr:gt(0):eq(${idx})\').get(0), $(\'#examples tr:gt(0):eq(${idx + 1})\').get(0))">Down</button>`);
-        //     });
-        // }
-        function addSubtask() {
-            $('#subtask tr:last').after('<tr><td>0</td><td><input type="text"> ms</td><td><input type="text"> ms</td><td><input type="text"> bytes</td><td><input type="text"></td><td><select></select></td><td><input type="text"></td><td><select></select></td><td><select></select></td><td><input type="text"></td><td><button type="button">Delete</button></td></tr>');
-            // reenumerate();
+        function reenumerateSubtask() {
+            var len = $('#subtask tr:gt(0)').length;
+            $('#subtask tr:gt(0)').each(function (idx) {
+                $(this).find('td:eq(0)').html(idx + 1);
+                $(this).find('td:eq(1) input').attr('name', idx + 'tl');
+                $(this).find('td:eq(2) input').attr('name', idx + 'wl');
+                $(this).find('td:eq(3) input').attr('name', idx + 'ml');
+                $(this).find('td:eq(4) div').attr('id', idx + 'hierarchyContainer');
+                $(this).find('td:eq(4) input').attr('id', idx + 'hierarchyInput');
+                $(this).find('td:eq(4) button').off('click');
+                $(this).find('td:eq(4) button').click(function () {
+                    const val = $(`#${idx}hierarchyInput`).val();
+                    $(`#${idx}hierarchyInput`).val('');
+                    var len = $(`#${idx}hierarchyContainer .listEle`).length;
+                    $(`#${idx}hierarchyContainer`).append(`<div class="listEle" id="${len}listEle">${val}<span class="cross" onclick="$('#${len}listEle').hide();">×</span></div>`);
+                });
+                $(this).find('td:eq(5) select').attr('name', idx + 'dataset');
+                $(this).find('td:eq(6) input').attr('name', idx + 'regex');
+                $(this).find('td:eq(7) select').attr('name', idx + 'validator');
+                $(this).find('td:eq(8) select').attr('name', idx + 'checker');
+                $(this).find('td:eq(9) input').attr('name', idx + 'marks');
+                $(this).find('td:eq(10) button:eq(0)').off('click');
+                $(this).find('td:eq(10) button:eq(0)').click(function () {
+                    $(`#subtask tr:gt(0):eq(${idx})`).remove();
+                    reenumerateSubtask();
+                });
+                $(this).find('td:eq(10) button:gt(0)').remove();
+                if (idx > 0) $(this).find('td:eq(10)').append(`<button type="button" onclick="swap($(\'#examples tr:gt(0):eq(${idx})\').get(0), $(\'#examples tr:gt(0):eq(${idx - 1})\').get(0))">Up</button>`);
+                if (idx < len - 1) $(this).find('td:eq(10)').append(`<button type="button" onclick="swap($(\'#examples tr:gt(0):eq(${idx})\').get(0), $(\'#examples tr:gt(0):eq(${idx + 1})\').get(0))">Down</button>`);
+            });
         }
-        reenumerate();
+        function addSubtask() {
+            $('#subtask tr:last').after(`<tr><td>0</td><td><input type="text"> ms</td><td><input type="text"> ms</td><td><input type="text"> bytes</td><td><div class="list"></div>
+    <input type="text"><button type="button">Add</button>
+</td><td><select>
+<% data.forEach(function (item, idx) { %>
+    <option value="<%= item.name %>"><%= item.name %></option>
+<% }); %>
+                </select></td><td><input type="text"></td><td><select>
+    <option value="none">None</option>
+<% helper.forEach(function (item, idx) { %>
+    <option value="helper/<%= item %>"><%= item %></option>
+<% }); %>
+                </select></td><td><select>
+<% checkers.forEach(function (item, idx) { %>
+    <option value="checkers/<%= item.file %>"><%= item.file %> - <%= item.description %></option>
+<% }); %>
+<% helper.forEach(function (item, idx) { %>
+    <option value="helper/<%= item %>"><%= item %></option>
+<% }); %>
+                </select></td><td><input type="text"></td><td><button type="button">Delete</button></td></tr>`);
+            reenumerateSubtask();
+        }
+        function addLanguage() {
+            
+        }
+        reenumerateSubtask();
     </script>
 </body>
 </html>

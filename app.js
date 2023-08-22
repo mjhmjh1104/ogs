@@ -1537,10 +1537,136 @@ app.get('/grading/:num', async function (req, res) {
     try {
         grading = JSON.parse(await fs.readFile(`archive/${req.params.num}/data.json`));
     } catch (e) { }
+    var data = [];
+    try {
+        data = JSON.parse(await fs.readFile(`archive/${req.params.num}/data.json`));
+    } catch (e) { }
+    var helper = [ ];
+    try {
+        helper = JSON.parse(await fs.readFile(`archive/${req.params.num}/helpers.json`));
+    } catch (e) { }
+    const info = JSON.parse(await fs.readFile(`archive/${req.params.num}/info.json`));
+    const checkers = (await sql.query(`SELECT file, description FROM checkers;`))[0];
     res.render('grading', {
         num: req.params.num,
-        grading: grading
+        grading: grading,
+        data: data,
+        helper: helper,
+        info: info,
+        checkers: checkers
     });
+});
+
+app.get('/languages', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect('/');
+    var languages = [ ];
+    try {
+        languages = JSON.parse(await fs.readFile('grading/languages.json'));
+    } catch (e) { }
+    res.render('languages', {
+        languages: languages
+    });
+});
+
+app.get('/languages/add', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect('/');
+    res.render('languagesAdd', {
+        error: '',
+        data: { }
+    });
+});
+
+app.post('/languages/delete', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect('/');
+    var languages = [ ];
+    try {
+        languages = JSON.parse(await fs.readFile('grading/languages.json'));
+    } catch (e) { }
+    const selectedId = req.body.languages;
+    var k = -1;
+    for (var i = 0; i < languages.length; i++) if (selectedId === languages[i].id) k = i;
+    if (k == -1) return res.redirect('/languages');
+    await fs.unlink(`grading/compilers/${selectedId}.sh`);
+    await fs.unlink(`grading/compilers/${selectedId}-run.sh`);
+    languages.splice(k, 1);
+    await fs.writeFile('grading/languages.json', JSON.stringify(languages));
+    res.redirect('/languages');
+});
+
+app.get('/languages/edit/:idx', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect('/');
+    var languages = [ ];
+    try {
+        languages = JSON.parse(await fs.readFile('grading/languages.json'));
+    } catch (e) { }
+    var k = -1;
+    for (var i = 0; i < languages.length; i++) if (req.params.idx === languages[i].id) k = i;
+    if (k == -1) return res.redirect('/languages');
+    var data = {
+        edit: 'true',
+        name: languages[k].name,
+        id: languages[k].id,
+        args: languages[k].args,
+        compile: (await fs.readFile(`grading/compilers/${req.params.idx}.sh`)).toString(),
+        execute: (await fs.readFile(`grading/compilers/${req.params.idx}-run.sh`)).toString()
+    };
+    for (idx in languages[k].submittings) {
+        const curr = languages[k].submittings[idx];
+        data[`${idx}submitting`] = curr;
+    }
+    res.render('languagesAdd', {
+        error: '',
+        data: data
+    });
+});
+
+app.post('/languages/add', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect('/');
+    var languages = [ ];
+    try {
+        languages = JSON.parse(await fs.readFile('grading/languages.json'));
+    } catch (e) { }
+    if (!req.body.name) return res.render('languagesAdd', {
+        error: 'Name empty',
+        data: req.body
+    });
+    if (!req.body.id) return res.render('languagesAdd', {
+        error: 'Id empty',
+        data: req.body
+    });
+    if (inappropriate(req.body.id)) return res.render('languagesAdd', {
+        error: 'Id prohibited',
+        data: req.body
+    });
+    var k = -1;
+    for (var i = 0; i < languages.length; i++) if (languages[i].id === req.body.id) k = i;
+    if (k != -1 && req.body.edit !== 'true') return res.render('languagesAdd', {
+        error: 'Id already exists',
+        data: req.body
+    });
+    if (req.body.edit === 'true') {
+        languages.splice(k, 1);
+    }
+    var submittings = [ ];
+    for (var i = 0; ; i++) {
+        if (!req.body[`${i}submitting`]) break;
+        if (req.body[`${i}submittingEnabled`] === 'true') submittings.push(req.body[`${i}submitting`]);
+    }
+    languages.push( {
+        name: req.body.name,
+        id: req.body.id,
+        submittings: submittings,
+        args: req.body.args
+    });
+    await fs.writeFile(`grading/compilers/${req.body.id}.sh`, req.body.compile);
+    await fs.writeFile(`grading/compilers/${req.body.id}-run.sh`, req.body.execute);
+    await fs.writeFile('grading/languages.json', JSON.stringify(languages));
+    res.redirect('/languages');
 });
 
 app.get('/:num', function (req, res) {

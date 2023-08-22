@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="//code.jquery.com/jquery-1.12.4.min.js"></script>
+    <title>OGS</title>
+    <style>
+        .cross {
+            margin-left: 5px;
+            font-size: 15px;
+            color: red;
+        }
+    </style>
+</head>
+<body>
+    <h1>Add Language</h1>
+    <% if (error) { %><span style="color: red"><%= error %></span><br><% } %>
+    <form method="POST" action="/languages/add" accept-charset="utf-8"enctype="multipart/form-data">
+        <input type="hidden" name="edit" value="<%= data.edit ? data.edit : 'false' %>">
+        Name: <input name="name" value="<%= data.name %>"><br>
+        id: <input name="id" value="<%= data.id %>"><br>
+        Submitting Files: <div class="list" id="listContainer">
+<% for (var i = 0; ; i++) { %>
+<% if (!data[`${i}submitting`]) break; %>
+        <div class="listEle" id="<%= i %>listEle">
+            <input type="hidden" name="<%= i %>submitting" value="<%= data[`${i}submitting`] %>
+            ">
+            <input type="hidden" name="<%= i %>submittingEnabled" id="<%= i %>listEnable" value="<%= data[`${i}submittingEnabled`] %>">
+            <%= data[`${i}submitting`] %>
+            <span class="cross" onclick="$('#<%= i %>listEle').hide();$('#<%= i %>listEnable').val('false');">×</span>
+        </div>
+<% } %>
+        </div><input type="text" id="listInput"><button type="button" onclick="add();">Add</button><br>
+        Args: <input name="args" value="<%= data.args %>"><br>
+        Compilation: <textarea name="compile"><%= data.compile %></textarea><br>
+        Execution: <textarea name="execute"><%= data.execute %></textarea><br>
+        <button type="submit">Submit</button>
+    </form>
+    <a href="/languages">Back</a>
+
+    <script>
+        function add() {
+            const val = $(`#listInput`).val();
+            $(`#listInput`).val('');
+            var len = $(`#listContainer .listEle`).length;
+            $(`#listContainer`).append(`<div class="listEle" id="${len}listEle"><input type="hidden" name="${len}submitting" value="${val}"><input type="hidden" name="${len}submittingEnabled" id="${len}listEnable" value="true">${val}<span class="cross" onclick="$('#${len}listEle').hide();$('#${len}listEnable').val('false');">×</span></div>`);
+        }
+    </script>
+</body>
+</html>

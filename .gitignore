@@ -2,6 +2,10 @@ node_modules
 archive
 grading/submissions
 grading/messages
+grading/checkers
+grading/compilers
 config.json
 grading/isolate
 changelog
+grading/checkers.json
+grading/languages.json
