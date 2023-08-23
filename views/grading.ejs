@@ -1,75 +1,20 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <script src="//code.jquery.com/jquery-1.12.4.min.js"></script>
     <title>OGS</title>
-    <style>
-        .description {
-            white-space: pre-wrap;
-        }
-        iframe {
-            width: 800px;
-            height: 1000px;
-        }
-        *:not(.MJX-TEX *) {
-            font-family: sans-serif;
-            color: #333;
-        }
-        *, p, ul, ol, li {
-            margin: 0;
-            margin-block: 0;
-        }
-        p {
-            line-height: 30px;
-        }
-        li {
-            margin-top: -5px;
-        }
-        table {
-            border-collapse: collapse;
-            width: 100%;
-        }
-        th, td {
-            border: 1px #888 solid;
-            padding: 12px 15px;
-        }
-        .container {
-            margin: 100px auto;
-            width: 850px;
-        }
-        h1, h2, h3, h4, h5, h6 {
-            border-bottom: 1px #ccc solid;
-            margin-bottom: 15px;
-        }
-        code, .code {
-            border: 1px #aaa solid;
-            padding: 5px 10px;
-            background-color: #eee;
-            font-family: 'Menlo', 'Consolas', Arial, sans-serif !important;
-        }
-        code {
-            display: inline-block;
-            line-height: normal;
-        }
-        .code {
-            display: block;
-        }
-        .code * {
-            font-family: 'Menlo', 'Consolas', Arial, sans-serif !important;
-        }
-        .cross {
-            margin-left: 5px;
-            font-size: 15px;
-            color: red;
-        }
-    </style>
+    <%- include('head.ejs') %>
 </head>
 <body>
     <div class="container">
         <h1>Grading of <%= num %></h1>
-        <form method="POST" action="/grading/<%= num %>" accept-charset="utf-8" enctype="multipart/form-data">
+        <span id="error" style="color: red;"></span>
+        <span id="message" style="color: blue;"></span><br>
+        <code id="stderr" style="color: red;"></code><br>
+        <form method="POST" action="/grading/<%= num %>" accept-charset="utf-8" id="form" enctype="multipart/form-data">
+            <input type="hidden" name="subtaskCnt" id="subtaskCnt" value="0">
+            <input type="hidden" name="languagesCnt" id="languagesCnt" value="0">
+            <input type="hidden" name="id" value="<%= id %>">
+            Gradable: <input type="checkbox" name="gradable"<% if (grading.gradable === undefined || grading.gradable) { %> checked<% } %>><br>
             Subtasks:
             <table id="subtask">
                 <tr>
@@ -85,6 +30,44 @@
                     <th>Marks</th>
                     <th>Functions</th>
                 </tr>
+<% if (grading.subtask) grading.subtask.forEach(function (item, idx) { %>
+                <tr>
+                    <td>0</td>
+                    <td><input type="text" value="<%= item.tl %>"> ms</td>
+                    <td><input type="text" value="<%= item.wl %>"> ms</td>
+                    <td><input type="text" value="<%= item.ml %>"> bytes</td>
+                    <td>
+                        <div class="list">
+<% item.hierarchy.forEach(function (item, idx2) { %>
+                            <div class="listEle" id="<%= idx %>-<%= idx2 %>hierarchyListEle"><input type="hidden" name="<%= idx %>-<%= idx2 %>hierarchy" value="<%= item + 1 %>"><input type="hidden" name="<%= idx %>-<%= idx2 %>hierarchyEnabled" id="<%= idx %>-<%= idx2 %>hierarchyEnabled" value="true"><%= item + 1 %><span class="cross" onclick="$('#<%= idx %>-<%= idx2 %>hierarchyListEle').hide();$('#<%= idx %>-<%= idx2 %>hierarchyEnabled').val('false');">×</span></div>
+<% }); %>
+                        </div>
+                        <input type="text"><button type="button">Add</button>
+                    </td>
+                    <td><select>
+<% dataset.forEach(function (item2, idx) { %>
+    <option value="<%= item2.name %>"<% if (item2.name === item.dataset) { %> selected<% } %>><%= item2.name %></option>
+<% }); %>
+                    </select></td>
+                    <td><input type="text" value="<%= item.regex %>"></td>
+                    <td><div class="progressBar"></div><select>
+    <option value="none"<% if ('none' === item.validator) { %> selected<% } %>>None</option>
+<% helper.forEach(function (item2, idx) { %>
+    <option value="helper/<%= item2 %>"<% if ('helper/' + item2 === item.validator) { %> selected<% } %>><%= item2 %></option>
+<% }); %>
+                    </select></td>
+                    <td><select>
+<% checkers.forEach(function (item2, idx) { %>
+    <option value="checkers/<%= item2.file %>"<% if ('checkers/' + item2.file === item.checker) { %> selected<% } %>><%= item2.file %> - <%= item2.description %></option>
+<% }); %>
+<% helper.forEach(function (item2, idx) { %>
+    <option value="helper/<%= item2 %>"<% if ('helper/' + item2 === item.checker) { %> selected<% } %>><%= item2 %></option>
+<% }); %>
+                    </select></td>
+                    <td><input type="text" value="<%= item.marks %>"></td>
+                    <td><button type="button">Delete</button></td>
+                </tr>
+<% }); %>
             </table>
             <button type="button" onclick="addSubtask();">Add</button>
             <br>
@@ -93,18 +76,50 @@
                 <tr>
                     <th>#</th>
                     <th>Language</th>
-                    <th>Command</th>
                     <th>Arguments</th>
                     <th>Submitting Files</th>
                     <th>Sample Code</th>
                     <th>Necessary Helpers</th>
-                    <th>Functions</th>
                     <th>Test</th>
+                    <th>Functions</th>
                 </tr>
+<% if (grading.languages) grading.languages.forEach(function (item, idx) { %>
+                <tr>
+                    <td>0</td>
+                    <td><select>
+<% languages.forEach(function (item2, idx) { %>
+    <option value="<%= item2.id %>"<% if (item2.id = item.lang) {%> selected<% } %>><%= item2.name %></option>
+<% }); %>
+                    </select></td>
+                    <td><input type="text" value="<%= item.args %>"></td>
+                    <td>
+                        <div class="list">
+<% item.submittings.forEach(function (item, idx2) { %>
+                            <div class="listEle" id="<%= idx %>-<%= idx2 %>submittingsListEle"><input type="hidden" name="<%= idx %>-<%= idx2 %>submitting" value="<%= item %>"><input type="hidden" name="<%= idx %>-<%= idx2 %>submittingEnabled" id="<%= idx %>-<%= idx2 %>submittingsEnabled" value="true"><%= item %><span class="cross" onclick="$('#<%= idx %>-<%= idx2 %>submittingsListEle').hide();$('#<%= idx %>-<%= idx2 %>submittingsEnabled').val('false');">×</span></div>
+<% }); %>
+                        </div>
+                        <input type="text"><button type="button">Add</button>
+                    </td>
+                    <td><textarea><%= item.sample %></textarea></td>
+                    <td>
+                        <div class="list">
+<% item.necessaries.forEach(function (item, idx2) { %>
+                            <div class="listEle" id="<%= idx %>-<%= idx2 %>necessariesListEle"><input type="hidden" name="<%= idx %>-<%= idx2 %>helper" value="<%= item %>"><input type="hidden" name="<%= idx %>-<%= idx2 %>helperEnabled" id="<%= idx %>-<%= idx2 %>necessariesEnabled" value="true"><%= item %><span class="cross" onclick="$('#<%= idx %>-<%= idx2 %>necessariesListEle').hide();$('#<%= idx %>-<%= idx2 %>necessariesEnabled').val('false');">×</span></div>
+<% }); %>
+                        </div>
+                        <select>
+<% helper.forEach(function (item, idx) { %>
+    <option value="<%= item %>"><%= item %></option>
+<% }); %>
+                        </select><button type="button">Add</button></td>
+                    <td><input type="checkbox"<% if (item.test === undefined || item.test) { %> checked <% } %>></td>
+                    <td><button type="button">Delete</button></td>
+                </tr>
+<% }); %>
             </table>
             <button type="button" onclick="addLanguage();">Add</button>
-            <!-- <button type="submit">Apply</button> -->
         </form>
+        <button type="button" id="submit" onclick="submit();">Apply</button>
         <a href="/view/<%= num %>">Back</a>
     </div>
 
@@ -113,7 +128,8 @@
             var sib = y.nextSibling === x ? y : y.nextSibling;
             x.parentNode.insertBefore(y, x);
             y.parentNode.insertBefore(x, sib);
-            // reenumerate();
+            reenumerateSubtask();
+            reenumerateLanguage();
         }
         function reenumerateSubtask() {
             var len = $('#subtask tr:gt(0)').length;
@@ -122,14 +138,26 @@
                 $(this).find('td:eq(1) input').attr('name', idx + 'tl');
                 $(this).find('td:eq(2) input').attr('name', idx + 'wl');
                 $(this).find('td:eq(3) input').attr('name', idx + 'ml');
-                $(this).find('td:eq(4) div').attr('id', idx + 'hierarchyContainer');
-                $(this).find('td:eq(4) input').attr('id', idx + 'hierarchyInput');
+                $(this).find('td:eq(4) div.list').attr('id', idx + 'hierarchyContainer');
+                $(this).find('td:eq(4) input[type=text]').attr('id', idx + 'hierarchyInput');
                 $(this).find('td:eq(4) button').off('click');
                 $(this).find('td:eq(4) button').click(function () {
                     const val = $(`#${idx}hierarchyInput`).val();
                     $(`#${idx}hierarchyInput`).val('');
                     var len = $(`#${idx}hierarchyContainer .listEle`).length;
-                    $(`#${idx}hierarchyContainer`).append(`<div class="listEle" id="${len}listEle">${val}<span class="cross" onclick="$('#${len}listEle').hide();">×</span></div>`);
+                    $(`#${idx}hierarchyContainer`).append(`<div class="listEle" id="${idx}-${len}hierarchyListEle"><input type="hidden" name="${idx}-${len}hierarchy" value="${val}"><input type="hidden" name="${idx}-${len}hierarchyEnabled" id="${idx}-${len}hierarchyEnabled" value="true">${val}<span class="cross" onclick="$('#${idx}-${len}hierarchyListEle').hide();$('#${idx}-${len}hierarchyEnabled').val('false');">×</span></div>`);
+                });
+
+                $(this).find(`#${idx}hierarchyContainer .listEle`).each(function (idx2) {
+                    $(this).attr('id', `${idx}-${idx2}hierarchyListEle`);
+                    $(this).find('input:eq(0)').attr('name', `${idx}-${idx2}hierarchy`);
+                    $(this).find('input:eq(1)').attr('name', `${idx}-${idx2}hierarchyEnabled`);
+                    $(this).find('input:eq(1)').attr('id', `${idx}-${idx2}hierarchyEnabled`);
+                    $(this).find('span').off('click');
+                    $(this).find('span').click(function () {
+                        $(`#${idx}-${len}hierarchyListEle`).hide();
+                        $(`#${idx}-${len}hierarchyEnabled`).val('false');
+                    })
                 });
                 $(this).find('td:eq(5) select').attr('name', idx + 'dataset');
                 $(this).find('td:eq(6) input').attr('name', idx + 'regex');
@@ -142,36 +170,177 @@
                     reenumerateSubtask();
                 });
                 $(this).find('td:eq(10) button:gt(0)').remove();
-                if (idx > 0) $(this).find('td:eq(10)').append(`<button type="button" onclick="swap($(\'#examples tr:gt(0):eq(${idx})\').get(0), $(\'#examples tr:gt(0):eq(${idx - 1})\').get(0))">Up</button>`);
-                if (idx < len - 1) $(this).find('td:eq(10)').append(`<button type="button" onclick="swap($(\'#examples tr:gt(0):eq(${idx})\').get(0), $(\'#examples tr:gt(0):eq(${idx + 1})\').get(0))">Down</button>`);
+                if (idx > 0) $(this).find('td:eq(10)').append(`<button type="button" onclick="swap($(\'#subtask tr:gt(0):eq(${idx})\').get(0), $(\'#subtask tr:gt(0):eq(${idx - 1})\').get(0))">Up</button>`);
+                if (idx < len - 1) $(this).find('td:eq(10)').append(`<button type="button" onclick="swap($(\'#subtask tr:gt(0):eq(${idx})\').get(0), $(\'#subtask tr:gt(0):eq(${idx + 1})\').get(0))">Down</button>`);
             });
+            $('#subtaskCnt').val(len.toString());
+        }
+        function reenumerateLanguage() {
+            var len = $('#languages tr:gt(0)').length;
+            $('#languages tr:gt(0)').each(function (idx) {
+                $(this).find('td:eq(0)').html(idx + 1);
+                $(this).find('td:eq(1) select').attr('name', idx + 'lang');
+                $(this).find('td:eq(2) input').attr('name', idx + 'args');
+                $(this).find('td:eq(3) div.list').attr('id', idx + 'submittingContainer');
+                $(this).find('td:eq(3) input[type=text]').attr('id', idx + 'submittingInput');
+                $(this).find('td:eq(3) button').off('click');
+                $(this).find('td:eq(3) button').click(function () {
+                    const val = $(`#${idx}submittingInput`).val();
+                    $(`#${idx}submittingInput`).val('');
+                    var len = $(`#${idx}submittingContainer .listEle`).length;
+                    $(`#${idx}submittingContainer`).append(`<div class="listEle" id="${idx}-${len}submittingsListEle"><input type="hidden" name="${idx}-${len}submitting" value="${val}"><input type="hidden" name="${idx}-${len}submittingEnabled" id="${idx}-${len}submittingsEnabled" value="true">${val}<span class="cross" onclick="$('#${idx}-${len}submittingsListEle').hide();$('#${idx}-${len}submittingsEnabled').val('false');">×</span></div>`);
+                });
+
+                $(this).find(`#${idx}submittingContainer .listEle`).each(function (idx2) {
+                    $(this).attr('id', `${idx}-${idx2}submittingsListEle`);
+                    $(this).find('input:eq(0)').attr('name', `${idx}-${idx2}submitting`);
+                    $(this).find('input:eq(1)').attr('name', `${idx}-${idx2}submittingEnabled`);
+                    $(this).find('input:eq(1)').attr('id', `${idx}-${idx2}submittingsEnabled`);
+                    $(this).find('span').off('click');
+                    $(this).find('span').click(function () {
+                        $(`#${idx}-${len}submittingsListEle`).hide();
+                        $(`#${idx}-${len}submittingsEnabled`).val('false');
+                    })
+                });
+                $(this).find('td:eq(4) textarea').attr('name', idx + 'sample');
+                $(this).find('td:eq(5) div.list').attr('id', idx + 'helperContainer');
+                $(this).find('td:eq(5) select').attr('id', idx + 'helperInput');
+                $(this).find('td:eq(5) button').off('click');
+                $(this).find('td:eq(5) button').click(function () {
+                    const val = $(`#${idx}helperInput`).val();
+                    var len = $(`#${idx}helperContainer .listEle`).length;
+                    $(`#${idx}helperContainer`).append(`<div class="listEle" id="${idx}-${len}necessariesListEle"><input type="hidden" name="${idx}-${len}helper" value="${val}"><input type="hidden" name="${idx}-${len}helperEnabled" id="${idx}-${len}necessariesEnabled" value="true">${val}<span class="cross" onclick="$('#${idx}-${len}necessariesListEle').hide();$('#${idx}-${len}necessariesEnabled').val('false');">×</span></div>`);
+                });
+
+                $(this).find(`#${idx}helperContainer .listEle`).each(function (idx2) {
+                    $(this).attr('id', `${idx}-${idx2}necessariesListEle`);
+                    $(this).find('input:eq(0)').attr('name', `${idx}-${idx2}helper`);
+                    $(this).find('input:eq(1)').attr('name', `${idx}-${idx2}helperEnabled`);
+                    $(this).find('input:eq(1)').attr('id', `${idx}-${idx2}necessariesEnabled`);
+                    $(this).find('span').off('click');
+                    $(this).find('span').click(function () {
+                        $(`#${idx}-${len}necessariesListEle`).hide();
+                        $(`#${idx}-${len}necessariesEnabled`).val('false');
+                    })
+                });
+                $(this).find('td:eq(6) input').attr('name', idx + 'test');
+                $(this).find('td:eq(7) button:eq(0)').off('click');
+                $(this).find('td:eq(7) button:eq(0)').click(function () {
+                    $(`#languages tr:gt(0):eq(${idx})`).remove();
+                    reenumerateLanguage();
+                });
+                $(this).find('td:eq(7) button:gt(0)').remove();
+                if (idx > 0) $(this).find('td:eq(7)').append(`<button type="button" onclick="swap($(\'#languages tr:gt(0):eq(${idx})\').get(0), $(\'#languages tr:gt(0):eq(${idx - 1})\').get(0))">Up</button>`);
+                if (idx < len - 1) $(this).find('td:eq(7)').append(`<button type="button" onclick="swap($(\'#languages tr:gt(0):eq(${idx})\').get(0), $(\'#languages tr:gt(0):eq(${idx + 1})\').get(0))">Down</button>`);
+            });
+            $('#languagesCnt').val(len.toString());
         }
         function addSubtask() {
             $('#subtask tr:last').after(`<tr><td>0</td><td><input type="text"> ms</td><td><input type="text"> ms</td><td><input type="text"> bytes</td><td><div class="list"></div>
     <input type="text"><button type="button">Add</button>
 </td><td><select>
-<% data.forEach(function (item, idx) { %>
+<% dataset.forEach(function (item, idx) { %>
     <option value="<%= item.name %>"><%= item.name %></option>
 <% }); %>
-                </select></td><td><input type="text"></td><td><select>
+    </select></td><td><input type="text"></td><td><div class="progressBar"></div><select>
     <option value="none">None</option>
 <% helper.forEach(function (item, idx) { %>
     <option value="helper/<%= item %>"><%= item %></option>
 <% }); %>
-                </select></td><td><select>
+    </select></td><td><select>
 <% checkers.forEach(function (item, idx) { %>
     <option value="checkers/<%= item.file %>"><%= item.file %> - <%= item.description %></option>
 <% }); %>
 <% helper.forEach(function (item, idx) { %>
     <option value="helper/<%= item %>"><%= item %></option>
 <% }); %>
-                </select></td><td><input type="text"></td><td><button type="button">Delete</button></td></tr>`);
+    </select></td><td><input type="text"></td><td><button type="button">Delete</button></td></tr>`);
             reenumerateSubtask();
         }
         function addLanguage() {
-            
+            $('#languages tr:last').after(`<tr><td>0</td><td><select>
+<% languages.forEach(function (item, idx) { %>
+    <option value="<%= item.id %>"><%= item.name %></option>
+<% }); %>
+    </select></td><td><input type="text"></td><td><div class="list"></div>
+    <input type="text"><button type="button">Add</button>
+</td><td><textarea></textarea></td><td><div class="list"></div>
+    <select>
+<% helper.forEach(function (item, idx) { %>
+    <option value="<%= item %>"><%= item %></option>
+<% }); %>
+    </select><button type="button">Add</button></td><td><input type="checkbox" checked></td><td><button type="button">Delete</button></td></tr>`);
+            reenumerateLanguage();
         }
         reenumerateSubtask();
+        reenumerateLanguage();
+    </script>
+
+    <script>
+        var socket = io();
+
+        function submit() {
+            $('.progressBar').width('0');
+            $('td').css('background-color', 'transparent');
+            socket.emit('id', {
+                id: '<%= id %>',
+                type: 'grading'
+            });
+            var formData = new FormData ();
+            $('#form').serializeArray().forEach(function (item) {
+                formData.append(item.name, item.value);
+            });
+            $('input, button, select').attr('disabled', true);
+            $('input, textarea').prop('readonly', true);
+            $('span').hide();
+            $('#error, #message').show();
+            $.ajax({
+                url: '/grading/<%= num %>',
+                data: formData,
+                type: 'POST',
+                contentType: false,
+                processData: false,
+                success: function (data) {
+                    if (data.type === 'redirect') window.location.href = data.url;
+                    if (data.type === 'done') {
+                        $('#error').html('');
+                        $('#stderr').html('');
+                        $('#message').html(data.message);
+                    }
+                    if (data.type === 'error') {
+                        $('#error').html(data.error);
+                        $('#message').html('');
+                        $('input, button, select').attr('disabled', false);
+                        $('input, textarea').prop('readonly', false);
+                        $('span').show();
+                    }
+                }
+            });
+        }
+
+        socket.on('updt', function (data) {
+            console.log(data);
+            if (data.result.result === 'AC') window.location.href = '/view/<%= num %>';
+            else if (data.result.result === 'DA') {
+                $(`#subtask tr:eq(${data.result.subtask}) td:eq(7) .progressBar`).width((data.result.progress * 100) + '%');
+            } else if (data.result.result === 'CA') {
+                $(`#subtask tr:eq(${data.result.subtask}) td:eq(8)`).css('background-color', 'hsla(100, 100%, 50%, 0.4)');
+            } else if (data.result.result === 'VA') {
+                $(`#subtask tr:eq(${data.result.subtask}) td:eq(7)`).css('background-color', 'black');
+            } else {
+                var error = 'Failed at';
+                if (data.result.subtask !== undefined) error += ' subtask ' + data.result.subtask;
+                if (data.result.data !== undefined) error += ' data ' + data.result.data;
+                if (data.result.type === 'checker') $(`#subtask tr:eq(${data.result.subtask}) td:eq(8)`).css('background-color', 'hsla(0, 100%, 50%, 0.4)');
+                if (data.result.type === 'validator') $(`#subtask tr:eq(${data.result.subtask}) td:eq(7)`).css('background-color', 'hsla(0, 100%, 50%, 0.4)');
+                $('#error').html(error);
+                $('#stderr').html(data.result.log);
+                $('#message').html('');
+                $('input, button, select').attr('disabled', false);
+                $('input, textarea').prop('readonly', false);
+                $('span').show();
+            }
+        });
     </script>
 </body>
 </html>

@@ -1,0 +1,128 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="//code.jquery.com/jquery-1.12.4.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+<script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+    .condition {
+        display: none;
+    }
+    body {
+        height: 100%;
+    }
+    #preview {
+        right: 0;
+        top: 0;
+        position: absolute;
+        width: 50%;
+        height: 100%;
+        display: block;
+        background-color: #EEE;
+    }
+    #left {
+        left: 0;
+        top: 0;
+        position: absolute;
+        width: 50%;
+        height: 100%;
+        display: block;
+    }
+    .description, .marked {
+        white-space: pre-wrap;
+    }
+    iframe {
+        width: 800px;
+        height: 1000px;
+    }
+    *:not(.MJX-TEX *) {
+        font-family: sans-serif;
+        color: #333;
+    }
+    *, p, ul, ol, li {
+        margin: 0;
+        margin-block: 0;
+    }
+    p {
+        line-height: 30px;
+    }
+    table {
+        border-collapse: collapse;
+        width: 100%;
+    }
+    th, td {
+        border: 1px #888 solid;
+        padding: 12px 15px;
+    }
+    .container {
+        margin: 100px auto;
+        width: 850px;
+    }
+    h1, h2, h3, h4, h5, h6 {
+        border-bottom: 1px #ccc solid;
+        margin-bottom: 15px;
+    }
+    p:not(.code p), img, table {
+        margin-bottom: 15px;
+    }
+    li {
+        margin: 7.5px 0;
+    }
+    code, .code {
+        border: 1px #aaa solid;
+        padding: 5px 10px;
+        background-color: #eee;
+        font-family: 'Menlo', 'Consolas', Arial, sans-serif !important;
+        word-break: break-all;
+    }
+    code {
+        display: inline-block;
+        line-height: normal;
+        white-space: pre-wrap;
+    }
+    .code {
+        display: block;
+        margin: 5px 0;
+    }
+    .code * {
+        font-family: 'Menlo', 'Consolas', Arial, sans-serif !important;
+    }
+    .example {
+        width: 100%;
+        display: inline-block;
+    }
+    .input {
+        width: calc(50% - 4px);
+        margin-right: 4px;
+        float: left;
+    }
+    .output {
+        width: calc(50% - 4px);
+        margin-left: 4px;
+        float: left;
+    }
+    .submission {
+        width: 100%;
+        height: 500px;
+    }
+    .cross {
+        margin-left: 5px;
+        font-size: 15px;
+        color: red;
+    }
+    td {
+        transition-duration: .5s;
+        position: relative;
+    }
+    .progressBar {
+        transition-duration: .5s;
+        display: block;
+        background-color: hsla(60, 100%, 50%, 0.4);
+        width: 0;
+        height: 100%;
+        position: absolute;
+        top: 0;
+        left: 0;
+    }
+</style>

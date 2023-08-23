@@ -25,6 +25,7 @@ var sql = null;
 var socketList = { };
 var idSockets = { };
 var checkerSocket = { };
+var gradingSocket = { };
 
 // Queue storing submission IDs
 var queue = [ ];
@@ -205,14 +206,29 @@ app.post('/users/:id/delete', async function (req, res) {
 });
 
 app.get('/detail/:id', async function (req, res) {
-    const [ rows, fields ] = await sql.query(`SELECT cnt, id, user, result, problem, time, memory, submitDate, gradingStyle FROM submissions LEFT JOIN problems ON submissions.problem = problems.num WHERE id = ${mysql.escape(req.params.id)};`);
+    const [ rows, fields ] = await sql.query(`SELECT cnt, id, user, result, lang, marks, problem, time, memory, submitDate FROM submissions LEFT JOIN problems ON submissions.problem = problems.num WHERE id = ${mysql.escape(req.params.id)};`);
     if (rows.length <= 0) return res.send('Not Found');
-    const code = await fs.readFile(`grading/submissions/${req.params.id}`);
+    const problem = rows[0].problem;
+    var code = { };
+    var grading = { };
+    try {
+        grading = JSON.parse(await fs.readFile(`archive/${problem}/grading.json`));
+    } catch (e) { }
+    var k = -1;
+    for (var i = 0; i < grading.languages.length; i++) if (grading.languages[i].lang === rows[0].lang) k = i;
+    if (k != -1) for (var i = 0; i < grading.languages[k].submittings.length; i++) {
+        const name = grading.languages[k].submittings[i];
+        code[name] = (await fs.readFile(`grading/submissions/${req.params.id}-${name}`)).toString();
+    }
+    const [ rows2, fields2 ] = await sql.query(`SELECT subtask, result, marks, time, walltime, mem FROM subtasks WHERE id = ${mysql.escape(problem)} ORDER BY subtask`);
+    console.log(rows2);
     return res.render('submission', {
-        code: code.toString(),
+        code: code,
         submission: rows[0],
         user: req.session.auth,
-        getResult: getResult
+        getResult: getResult,
+        grading: grading,
+        subtasks: rows2
     });
 });
 
@@ -244,6 +260,10 @@ app.get('/view/:num', async function (req, res) {
     var examples = [ ];
     try {
         examples = JSON.parse(await fs.readFile(`archive/${num}/examples.json`));
+    } catch (e) { }
+    var grading = { };
+    try {
+        grading = JSON.parse(await fs.readFile(`archive/${req.params.num}/grading.json`));
     } catch (e) { }
     var contents = [ ];
     for (idx in info.versions) {
@@ -279,7 +299,8 @@ app.get('/view/:num', async function (req, res) {
         info: info,
         infoSql: rows[0],
         contents: contents,
-        user: req.session.auth
+        user: req.session.auth,
+        gradable: grading.gradable
     });
 });
 
@@ -310,16 +331,14 @@ app.post('/add/:num', async function (req, res) {
             num: req.params.num,
             data: req.body
         });
-        await sql.query(`INSERT INTO problems (num, title, gradingStyle) VALUES (${mysql.escape(req.params.num)}, ${mysql.escape(req.body.title)}, 'ungradable');`);
+        await sql.query(`INSERT INTO problems (num, title) VALUES (${mysql.escape(req.params.num)}, ${mysql.escape(req.body.title)});`);
         await saveProblem(req.params.num, {
-            title: req.body.title,
-            gradingStyle: 'ungradable'
+            title: req.body.title
         });
         await exec(`mkdir "archive/${req.params.num}"`);
         await exec(`touch "archive/${req.params.num}/description.md"`);
         await fs.writeFile(`archive/${req.params.num}/info.json`, JSON.stringify({
             title: req.body.title,
-            gradingStyle: 'ungradable',
             providing: [ ]
         }));
         await addHistory(req.params.num, req.session.auth.user, 'CRTPRB', null, {
@@ -329,14 +348,6 @@ app.post('/add/:num', async function (req, res) {
                 info: {
                     title: req.body.title,
                     providing: [ ]
-                }
-            }
-        });
-        await addHistory(req.params.num, req.session.auth.user, 'EDTGST', 'ungradable', {
-            before: { },
-            after: {
-                info: {
-                    gradingStyle: 'ungradable'
                 }
             }
         });
@@ -397,13 +408,29 @@ app.post('/delete/:num', async function (req, res) {
 
 app.get('/submit/:num', async function (req, res) {
     if (!req.session.auth) return res.redirect('/signin');
-    const [ rows, fields ] = await sql.query(`SELECT title, gradingStyle FROM problems WHERE num=${mysql.escape(req.params.num)};`);
+    const [ rows, fields ] = await sql.query(`SELECT title FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
     if (rows.length <= 0) {
         const [ rows2, fields2 ] = await sql.query(`SELECT href FROM redirections WHERE num = ${mysql.escape(req.params.num)};`);
         if (rows2.length > 0) return res.redirect(`/submit/${rows2[0].href}`);
         return res.send('Not Found');
     }
-    if (rows[0].gradingStyle === 'ungradable') return res.redirect(`/view/${req.params.num}`);
+    var grading = { };
+    try {
+        grading = JSON.parse(await fs.readFile(`archive/${req.params.num}/grading.json`));
+    } catch (e) { }
+    if (!grading.gradable) return res.redirect(`/view/${req.params.num}`);
+    var languages = [ ];
+    try {
+        languages = JSON.parse(await fs.readFile('grading/languages.json'));
+    } catch (e) { }
+    for (idx in grading.languages) {
+        const id = grading.languages[idx].lang;
+        for (var j = 0; j < languages.length; j++) if (languages[j].id === id) {
+            grading.languages[idx].langName = languages[j].name;
+            if (grading.languages[idx].submittings.length <= 0) grading.languages[idx].submittings = languages[j].submittings;
+            if (grading.languages[idx].args.length <= 0) grading.languages[idx].args = languages[j].args;
+        }
+    }
     return res.render('submit', {
         error: '',
         stderr: '',
@@ -411,7 +438,8 @@ app.get('/submit/:num', async function (req, res) {
         code: '',
         num: req.params.num,
         title: rows[0].title,
-        user: req.session.auth
+        user: req.session.auth,
+        grading: grading
     });
 });
 
@@ -441,19 +469,47 @@ app.get('/submissions/:num', async function (req, res) {
 
 app.post('/submit/:num', async function (req, res) {
     if (!req.session.auth) return res.redirect('/signin');
-    const [ rows, fields ] = await sql.query(`SELECT gradingStyle FROM problems WHERE num=${mysql.escape(req.params.num)};`);
-    if (rows.length <= 0) return res.send('Not Found');
-    if (rows[0].gradingStyle === 'ungradable') return res.redirect(`/view/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.send('Not Found');
+    var grading = { };
+    try {
+        grading = JSON.parse(await fs.readFile(`archive/${req.params.num}/grading.json`));
+    } catch (e) { }
+    if (!grading.gradable) return res.redirect(`/view/${req.params.num}`);
+    var languages = [ ];
+    try {
+        languages = JSON.parse(await fs.readFile('grading/languages.json'));
+    } catch (e) { }
+    var k = -1;
+    for (var i = 0; i < languages.length; i++) if (languages[i].id === req.body.lang) k = i;
+    if (k == -1) return res.redirect(`/submit/${req.params.num}`);
+    for (idx in grading.languages) {
+        const id = grading.languages[idx].lang;
+        for (var j = 0; j < languages.length; j++) if (languages[j].id === id) {
+            grading.languages[idx].langName = languages[j].name;
+            if (grading.languages[idx].submittings.length <= 0) grading.languages[idx].submittings = languages[j].submittings;
+            if (grading.languages[idx].args.length <= 0) grading.languages[idx].args = languages[j].args;
+        }
+    }
+    k = -1;
+    for (var i = 0; i < grading.languages.length; i++) if (grading.languages[i].lang === req.body.lang) k = i;
+    if (k == -1) return res.redirect(`/submit/${req.params.num}`);
+    const args = grading.languages[k].args;
+    const submittings = grading.languages[k].submittings;
     const id = genID();
-    await fs.writeFile(`grading/submissions/${id}`, req.body.code);
+    for (var i = 0; i < submittings.length; i++) await fs.writeFile(`grading/submissions/${id}-${submittings[i]}`, req.body[`code-${submittings[i]}`].replace(/\r/g, ''));
     queue.push({
-        type: rows[0].gradingStyle,
+        type: 'execute',
         filename: id,
         time: Date.now(),
         user: req.session.auth.user,
-        problem: req.params.num
+        problem: req.params.num,
+        grading: grading,
+        lang: req.body.lang,
+        args: args,
+        submittings: submittings
     });
-    await sql.query(`INSERT INTO submissions (id, user, problem) VALUES (${mysql.escape(id)}, ${mysql.escape(req.session.auth.user)}, ${mysql.escape(req.params.num)})`);
+    await sql.query(`INSERT INTO submissions (id, user, problem, lang) VALUES (${mysql.escape(id)}, ${mysql.escape(req.session.auth.user)}, ${mysql.escape(req.params.num)}, ${mysql.escape(req.body.lang)})`);
     await sql.query(`UPDATE problems SET submitCnt = submitCnt + 1 WHERE num = ${mysql.escape(req.params.num)};`);
     tryGrading();
     res.redirect(`/detail/${id}`);
@@ -512,7 +568,7 @@ app.post('/checkers/add', async function (req, res) {
         type: 'error',
         error: 'File already exists'
     });
-    await fs.writeFile(`grading/checkers/${req.body.file}.cpp`, req.body.code);
+    await fs.writeFile(`grading/checkers/${req.body.file}.cpp`, req.body.code.replace(/\r/g, ''));
     queue.push({
         type: 'checker',
         filename: req.body.file,
@@ -814,7 +870,7 @@ app.post('/description/:num/add', async function (req, res) {
             info.versions.splice(parseInt(req.body.pidx), 1);
         }
         await mkdir(`archive/${req.params.num}/descriptions`);
-        await fs.writeFile(`archive/${req.params.num}/descriptions/${req.body.file}`, req.body.md);
+        await fs.writeFile(`archive/${req.params.num}/descriptions/${req.body.file}`, req.body.md.replace(/\r/g, ''));
         if (!info.versions) info.versions = [];
         info.versions.push({
             type: req.body.type,
@@ -946,7 +1002,7 @@ app.post('/solution/:num/add', async function (req, res) {
             info.solutions.splice(parseInt(req.body.pidx), 1);
         }
         await mkdir(`archive/${req.params.num}/solutions`);
-        await fs.writeFile(`archive/${req.params.num}/solutions/${req.body.file}`, req.body.md);
+        await fs.writeFile(`archive/${req.params.num}/solutions/${req.body.file}`, req.body.md.replace(/\r/g, ''));
         if (!info.solutions) info.solutions = [];
         info.solutions.push({
             type: req.body.type,
@@ -1070,6 +1126,20 @@ app.get('/helper/:num', async function (req, res) {
         num: req.params.num,
         helper: helper
     });
+});
+
+app.get('/helper/:num/:idx', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+    await mkdir(`archive/${req.params.num}/helper`);
+    var helper = [ ];
+    try {
+        helper = JSON.parse(await fs.readFile(`archive/${req.params.num}/helpers.json`));
+    } catch (e) { }
+    if (!helper.includes(req.params.idx)) return res.redirect(`/helper/${req.params.num}`);
+    res.sendFile(path.join(__dirname, `archive/${req.params.num}/helper/${req.params.idx}`));
 });
 
 app.post('/provide/:num', async function (req, res) {
@@ -1400,6 +1470,11 @@ function includeName(lt, x) {
     return false;
 }
 
+function includeFile(lt, x) {
+    for (var i = 0; i < lt.length; i++) if (lt[i].file === x) return true;
+    return false;
+}
+
 function searchPath(lt, x) {
     for (var i = 0; i < lt.length; i++) if (lt[i].name === x) return lt[i].path;
     return '';
@@ -1522,38 +1597,15 @@ app.post('/data/:num/add', async function (req, res) {
         recursive: true,
         force: true
     });
+    var grading = { };
+    try {
+        grading = JSON.parse(await fs.readFile(`archive/${req.params.num}/grading.json`));
+    } catch (e) { }
+    grading.gradable = false;
+    await fs.writeFile(`archive/${req.params.num}/grading.json`, JSON.stringify(grading));
     return res.json({
         type: 'redirect',
         url: `/data/${req.params.num}`
-    });
-});
-
-app.get('/grading/:num', async function (req, res) {
-    if (!req.session.auth) return res.redirect('/signin');
-    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
-    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
-    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
-    var grading = { };
-    try {
-        grading = JSON.parse(await fs.readFile(`archive/${req.params.num}/data.json`));
-    } catch (e) { }
-    var data = [];
-    try {
-        data = JSON.parse(await fs.readFile(`archive/${req.params.num}/data.json`));
-    } catch (e) { }
-    var helper = [ ];
-    try {
-        helper = JSON.parse(await fs.readFile(`archive/${req.params.num}/helpers.json`));
-    } catch (e) { }
-    const info = JSON.parse(await fs.readFile(`archive/${req.params.num}/info.json`));
-    const checkers = (await sql.query(`SELECT file, description FROM checkers;`))[0];
-    res.render('grading', {
-        num: req.params.num,
-        grading: grading,
-        data: data,
-        helper: helper,
-        info: info,
-        checkers: checkers
     });
 });
 
@@ -1663,10 +1715,197 @@ app.post('/languages/add', async function (req, res) {
         submittings: submittings,
         args: req.body.args
     });
-    await fs.writeFile(`grading/compilers/${req.body.id}.sh`, req.body.compile);
-    await fs.writeFile(`grading/compilers/${req.body.id}-run.sh`, req.body.execute);
+    await fs.writeFile(`grading/compilers/${req.body.id}.sh`, req.body.compile.replace(/\r/g, ''));
+    await fs.writeFile(`grading/compilers/${req.body.id}-run.sh`, req.body.execute.replace(/\r/g, ''));
+    await exec(`chmod +x "grading/compilers/${req.body.id}.sh"`);
+    await exec(`chmod +x "grading/compilers/${req.body.id}-run.sh"`);
     await fs.writeFile('grading/languages.json', JSON.stringify(languages));
     res.redirect('/languages');
+});
+
+app.get('/grading/:num', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+    var grading = { };
+    try {
+        grading = JSON.parse(await fs.readFile(`archive/${req.params.num}/grading.json`));
+    } catch (e) { }
+    var data = [];
+    try {
+        data = JSON.parse(await fs.readFile(`archive/${req.params.num}/data.json`));
+    } catch (e) { }
+    var helper = [ ];
+    try {
+        helper = JSON.parse(await fs.readFile(`archive/${req.params.num}/helpers.json`));
+    } catch (e) { }
+    const info = JSON.parse(await fs.readFile(`archive/${req.params.num}/info.json`));
+    const checkers = (await sql.query(`SELECT file, description FROM checkers;`))[0];
+    var languages = [ ];
+    try {
+        languages = JSON.parse(await fs.readFile('grading/languages.json'));
+    } catch (e) { }
+    res.render('grading', {
+        id: genID(),
+        num: req.params.num,
+        grading: grading,
+        dataset: data,
+        helper: helper,
+        info: info,
+        checkers: checkers,
+        languages: languages
+    });
+});
+
+app.post('/grading/:num', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+    var data = [];
+    try {
+        data = JSON.parse(await fs.readFile(`archive/${req.params.num}/data.json`));
+    } catch (e) { }
+    var helper = [ ];
+    try {
+        helper = JSON.parse(await fs.readFile(`archive/${req.params.num}/helpers.json`));
+    } catch (e) { }
+    const info = JSON.parse(await fs.readFile(`archive/${req.params.num}/info.json`));
+    const checkers = (await sql.query(`SELECT file, description FROM checkers;`))[0];
+    var languages = [ ];
+    try {
+        languages = JSON.parse(await fs.readFile('grading/languages.json'));
+    } catch (e) { }
+    if (parseInt(req.body.subtaskCnt) != req.body.subtaskCnt || parseInt(req.body.subtaskCnt) < 0 || parseInt(req.body.languagesCnt) != req.body.languagesCnt || parseInt(req.body.languagesCnt) < 0) return res.json({
+        type: 'error',
+        error: 'Invalid'
+    });
+    if (parseInt(req.body.subtaskCnt) <= 0 || parseInt(req.body.languagesCnt) <= 0) req.body.gradable = false;
+    const subtaskLen = parseInt(req.body.subtaskCnt);
+    var gradingFiles = {
+        checkers: [ ],
+        validators: [ ]
+    };
+    for (var i = 0; i < subtaskLen; i++) {
+        if (parseInt(req.body[`${i}tl`]) != req.body[`${i}tl`] || parseInt(req.body[`${i}tl`]) < 0) return res.json({
+            type: 'error',
+            error: 'Invalid time limit'
+        });
+        if (parseInt(req.body[`${i}wl`]) != req.body[`${i}wl`] || parseInt(req.body[`${i}wl`]) < 0) return res.json({
+            type: 'error',
+            error: 'Invalid wall clock limit'
+        });
+        if (parseInt(req.body[`${i}ml`]) != req.body[`${i}ml`] || parseInt(req.body[`${i}ml`]) < 0) return res.json({
+            type: 'error',
+            error: 'Invalid memory limit'
+        });
+        var hierarchies = [ ];
+        for (var j = 0; ; j++) {
+            if (req.body[`${i}-${j}hierarchy`] === undefined) break;
+            if (req.body[`${i}-${j}hierarchyEnabled`] === 'true') hierarchies.push(req.body[`${i}-${j}hierarchy`]);
+        }
+        for (var idx = 0; idx < hierarchies.length; idx++) {
+            const curr = hierarchies[idx];
+            if (parseInt(curr) != curr || parseInt(curr) <= 0 || parseInt(curr) >= i + 1) return res.json({
+                type: 'error',
+                error: 'Invalid hierarchies'
+            });
+            hierarchies[idx] = parseInt(curr);
+            for (var jdx = 0; jdx < idx; jdx++) if (hierarchies[idx] == hierarchies[jdx]) return res.json({
+                type: 'error',
+                error: 'Invalid hierarchies'
+            });
+        }
+        var k = -1;
+        for (var j = 0; j < data.length; j++) if (data[j].name === req.body[`${i}dataset`]) k = j;
+        if (k == -1) return res.json({
+            type: 'error',
+            error: 'Invalid dataset'
+        });
+        var validRegex = true, regex = null;
+        try {
+            regex = new RegExp (req.body[`${i}regex`]);
+        } catch (e) {
+            return res.json({
+                type: 'error',
+                error: 'Invalid regex'
+            });
+        }
+        var cntData = 0;
+        for (var idx = 0; idx < data[k].data.length; idx++) {
+            const curr = data[k].data[idx];
+            if (regex.test(curr)) cntData++;
+        }
+        if (cntData <= 0) return res.json({
+            type: 'error',
+            error: 'No data'
+        });
+        if (parseInt(req.body[`${i}marks`]) != req.body[`${i}marks`] || req.body[`${i}marks`] < 0) return res.json({
+            type: 'error',
+            error: 'Invalid marks'
+        });
+        if (req.body[`${i}validator`] !== 'none' && ([...req.body[`${i}validator`].matchAll('^helper/')].length <= 0 || !helper.includes(req.body[`${i}validator`].substr(7)))) return res.json({
+            type: 'error',
+            error: 'Invalid validator'
+        });
+        if (([...req.body[`${i}checker`].matchAll('^checkers/')].length <= 0 || !includeFile(checkers, req.body[`${i}checker`].substr(9))) && ([...req.body[`${i}checker`].matchAll('^helper/')].length <= 0 || !helper.includes(req.body[`${i}checker`].substr(7)))) return res.json({
+            type: 'error',
+            error: 'Invalid checker'
+        });
+        if ([...req.body[`${i}checker`].matchAll('^checkers/')].length > 0) gradingFiles.checkers.push(`grading/checkers/${req.body[`${i}checker`].substr(9)}.cpp`);
+        else if ([...req.body[`${i}checker`].matchAll('^helper/')].length > 0) gradingFiles.checkers.push(`archive/${req.params.num}/helper/${req.body[`${i}checker`].substr(7)}`);
+        if (req.body[`${i}validator`] !== 'none') {
+            var currValidate = {
+                validator: `archive/${req.params.num}/helper/${req.body[`${i}validator`].substr(7)}`,
+                dataset: req.body[`${i}dataset`],
+                data: [ ],
+                hierarchies: hierarchies,
+                subtask: i + 1,
+            }
+            for (var idx = 0; idx < data[k].data.length; idx++) {
+                const curr = data[k].data[idx];
+                if (regex.test(curr)) currValidate.data.push(curr);
+            }
+            gradingFiles.validators.push(currValidate);
+        }
+    }
+    const languagesLen = parseInt(req.body.languagesLen);
+    for (var i = 0; i < languagesLen; i++) {
+        if (!languages.includes(req.body[`${i}lang`])) return res.json({
+            type: 'error',
+            error: 'Invalid language'
+        });
+        var necessaries = [ ];
+        for (var j = 0; ; j++) {
+            if (req.body[`${i}-${j}helper`] === undefined) break;
+            if (req.body[`${i}-${j}helperEnabled`]) necessaries.push(req.body[`${i}-${j}helper`]);
+        }
+        for (var j = 0; j < necessaries.length; j++) {
+            if (!helper.includes(necessaries[j])) return res.json({
+                type: 'error',
+                error: 'Invalid helper'
+            });
+            for (var k = 0; k < j; k++) if (necessaries[j] == necessaries[k]) return res.json({
+                type: 'error',
+                error: 'Invalid helper'
+            });
+        }
+    }
+    queue.push({
+        type: 'grading',
+        body: req.body,
+        files: gradingFiles,
+        time: Date.now(),
+        user: req.session.auth.user,
+        problem: req.params.num,
+        id: req.body.id
+    });
+    tryGrading();
+    return res.json({
+        type: 'done',
+        message: 'Compiling & Validating...'
+    });
 });
 
 app.get('/:num', function (req, res) {
@@ -1695,6 +1934,8 @@ function getResult(x) {
     if (x == 'FD') return 'Downloading Data';
     if (x == 'CP') return 'Compiling';
     if (x == 'GD') return 'Marking';
+    if (x == 'PE') return 'Presentation Error';
+    if (x == 'XE') return 'Extra Information';
     return 'Unknown';
 }
 
@@ -1725,23 +1966,43 @@ const workerNum = 3;
             }
             if (msg.data == 'busy') workers[msg.workerNum].busy = true;
             if (msg.data == 'updt') {
-                if (msg.content.type === 'ioiSimple') {
+                if (msg.content.type === 'execute') {
                     var done = 1;
-                    if (msg.content.result.done !== undefined) done = msg.content.result.done;
+                    if (msg.content.result.done !== undefined) {
+                        done = msg.content.result.done;
+                        if (msg.content.result.total !== undefined) done = msg.content.result.done / msg.content.result.total;
+                    }
                     if (msg.content.result.result == 'AC') {
                         const [ rows, fields ] = await sql.query(`SELECT result FROM submissions WHERE id = ${mysql.escape(msg.content.id)};`);
                         if (rows.length > 0 && rows[0].result !== 'AC') await sql.query(`UPDATE problems SET correctCnt = correctCnt + 1 WHERE num = ${mysql.escape(msg.content.problem)};`);
                     }
-                    await sql.query(`UPDATE submissions SET result = ${mysql.escape(msg.content.result.result)} WHERE id = ${mysql.escape(msg.content.id)};`);
+                    await sql.query(`UPDATE submissions SET result = ${mysql.escape(msg.content.result.result)}, marks = ${mysql.escape(msg.content.result.score)} WHERE id = ${mysql.escape(msg.content.id)};`);
                     if (msg.content.result.time !== undefined) await sql.query(`UPDATE submissions SET time = ${msg.content.result.time} WHERE id = ${mysql.escape(msg.content.id)};`);
+                    if (msg.content.result.walltime !== undefined) await sql.query(`UPDATE submissions SET walltime = ${msg.content.result.walltime} WHERE id = ${mysql.escape(msg.content.id)};`);
                     if (msg.content.result.mem !== undefined) await sql.query(`UPDATE submissions SET memory = ${msg.content.result.mem} WHERE id = ${mysql.escape(msg.content.id)};`);
+                    if (msg.content.result.subResult !== undefined) for (var i = 0; i < msg.content.result.subResult.length; i++) {
+                        const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM subtasks WHERE id = ${mysql.escape(msg.content.id)} AND subtask = ${mysql.escape(i + 1)};`);
+                        if (rows[0]['COUNT(1)'] <= 0) await sql.query(`INSERT INTO subtasks (id, subtask, result, marks, time, walltime, mem) VALUES (${mysql.escape(msg.content.id)}, ${mysql.escape(i + 1)}, ${mysql.escape(msg.content.result.subResult[i])}, ${mysql.escape(msg.content.result.subPoints[i])}, ${mysql.escape(msg.content.result.subTime[i])}, ${mysql.escape(msg.content.result.subWalltime[i])}, ${mysql.escape(msg.content.result.subMem[i])});`);
+                        else await sql.query(`UPDATE subtasks SET result = ${mysql.escape(msg.content.result.subResult[i])}, marks = ${mysql.escape(msg.content.result.subPoints[i])}, time = ${mysql.escape(msg.content.result.subTime[i])}, walltime = ${mysql.escape(msg.content.result.subWalltime[i])}, mem = ${mysql.escape(msg.content.result.subMem[i])} WHERE id = ${mysql.escape(msg.content.id)} AND subtask = ${mysql.escape(i + 1)}`)
+                    }
+                    var subProgress = [ ];
+                    if (msg.content.result.subDone !== undefined) for (var i = 0; i < msg.content.result.subDone.length; i++) subProgress.push(msg.content.result.subDone[i] / msg.content.result.subTotal[i]);
+                    var subResult = [ ];
+                    if (msg.content.result.subResult !== undefined) for (var i = 0; i < msg.content.result.subResult.length; i++) subResult.push(getResult(msg.content.result.subResult[i]));
                     if (idSockets[msg.content.id]) idSockets[msg.content.id].forEach(function (item, index, object) {
                         if (Date.now() - socketList[item].time > 24 * 60 * 60 * 1000) object.splice(index, 1);
                         io.to(item).emit('updt', {
                             result: getResult(msg.content.result.result),
                             time: msg.content.result.time,
                             mem: msg.content.result.mem,
-                            progress: done
+                            score: msg.content.result.score,
+                            progress: done,
+                            subProgress: subProgress,
+                            subResult: subResult,
+                            subPoints: msg.content.result.subPoints,
+                            subTime: msg.content.result.subTime,
+                            subWalltime: msg.content.result.subWalltime,
+                            subMem: msg.content.result.subMem
                         });
                     });
                 } else if (msg.content.type === 'checker') {
@@ -1754,6 +2015,57 @@ const workerNum = 3;
                         } catch (e) { }
                     }
                     if (checkerSocket[msg.content.id]) io.to(checkerSocket[msg.content.id]).emit('updt', {
+                        result: msg.content.result
+                    });
+                } else if (msg.content.type === 'grading') {
+                    const body = msg.content.body;
+                    if (msg.content.result.result === 'AC') {
+                        var subtask = [ ], languages = [ ];
+                        for (var i = 0; i < body.subtaskCnt; i++) {
+                            var hierarchy = [ ];
+                            for (var j = 0; ; j++) {
+                                if (body[`${i}-${j}hierarchy`] === undefined) break;
+                                if (body[`${i}-${j}hierarchyEnabled`] === 'true') hierarchy.push(parseInt(body[`${i}-${j}hierarchy`]) - 1);
+                            }
+                            subtask.push({
+                                tl: body[`${i}tl`],
+                                wl: body[`${i}wl`],
+                                ml: body[`${i}ml`],
+                                hierarchy: hierarchy,
+                                dataset: body[`${i}dataset`],
+                                regex: body[`${i}regex`],
+                                validator: body[`${i}validator`],
+                                checker: body[`${i}checker`],
+                                marks: body[`${i}marks`]
+                            });
+                        }
+                        for (var i = 0; i < body.languagesCnt; i++) {
+                            var submittings = [ ], necessaries = [ ];
+                            for (var j = 0; ; j++) {
+                                if (body[`${i}-${j}submitting`] === undefined) break;
+                                if (body[`${i}-${j}submittingEnabled`]) submittings.push(body[`${i}-${j}submitting`]);
+                            }
+                            for (var j = 0; ; j++) {
+                                if (body[`${i}-${j}helper`] === undefined) break;
+                                if (body[`${i}-${j}helperEnabled`]) necessaries.push(body[`${i}-${j}helper`]);
+                            }
+                            languages.push({
+                                lang: body[`${i}lang`],
+                                args: body[`${i}args`],
+                                submittings: submittings,
+                                sample: body[`${i}sample`].replace(/\r/g, ''),
+                                necessaries: necessaries,
+                                test: (body[`${i}test`] ? true : false)
+                            });
+                        }
+                        var grading = {
+                            gradable: (body.gradable ? true : false),
+                            subtask: subtask,
+                            languages: languages
+                        };
+                        await fs.writeFile(`archive/${msg.content.problem}/grading.json`, JSON.stringify(grading));
+                    }
+                    if (gradingSocket[msg.content.id]) io.to(gradingSocket[msg.content.id]).emit('updt', {
                         result: msg.content.result
                     });
                 }
@@ -1770,9 +2082,10 @@ const workerNum = 3;
             enableKeepAlive: true
         });
         await sql.query('CREATE TABLE IF NOT EXISTS users (cnt INT UNIQUE NOT NULL AUTO_INCREMENT, user VARCHAR(100) PRIMARY KEY, password VARCHAR(100) NOT NULL, registerDate DATETIME DEFAULT CURRENT_TIMESTAMP, admin BOOLEAN NOT NULL DEFAULT FALSE);');
-        await sql.query('CREATE TABLE IF NOT EXISTS problems (title VARCHAR(100) NOT NULL, num VARCHAR(100) PRIMARY KEY, submitCnt INT NOT NULL DEFAULT 0, correctCnt INT NOT NULL Default 0, gradingStyle VARCHAR(100) NOT NULL Default \'ungradable\');');
+        await sql.query('CREATE TABLE IF NOT EXISTS problems (title VARCHAR(100) NOT NULL, num VARCHAR(100) PRIMARY KEY, submitCnt INT NOT NULL DEFAULT 0, correctCnt INT NOT NULL Default 0);');
         await sql.query('CREATE TABLE IF NOT EXISTS redirections (num VARCHAR(100) PRIMARY KEY, href VARCHAR(100) NOT NULL);');
-        await sql.query('CREATE TABLE IF NOT EXISTS submissions (cnt INT UNIQUE NOT NULL AUTO_INCREMENT, id CHAR(64) PRIMARY KEY, user VARCHAR(100) NOT NULL, result VARCHAR(5), marks INT, problem VARCHAR(100) NOT NULL, time DOUBLE, memory DOUBLE, submitDate DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user) REFERENCES users(user), FOREIGN KEY (problem) REFERENCES problems(num));');
+        await sql.query('CREATE TABLE IF NOT EXISTS submissions (cnt INT UNIQUE NOT NULL AUTO_INCREMENT, id CHAR(64) PRIMARY KEY, user VARCHAR(100) NOT NULL, result VARCHAR(5), marks DOUBLE, problem VARCHAR(100) NOT NULL, lang VARCHAR(100) NOT NULL, time DOUBLE, walltime DOUBLE, memory DOUBLE, submitDate DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user) REFERENCES users(user), FOREIGN KEY (problem) REFERENCES problems(num));');
+        await sql.query('CREATE TABLE IF NOT EXISTS subtasks (id CHAR(64) NOT NULL, subtask INT NOT NULL, result VARCHAR(5), marks DOUBLE, time DOUBLE, walltime DOUBLE, mem DOUBLE, FOREIGN KEY (id) REFERENCES submissions(id));');
         if ((await sql.query('SELECT COUNT(1) FROM INFORMATION_SCHEMA.STATISTICS WHERE table_schema=DATABASE() AND table_name=\'submissions\' AND index_name=\'problemIndex\''))[0][0]['COUNT(1)'] <= 0) await sql.query('CREATE INDEX problemIndex ON submissions (problem);');
         await sql.query('CREATE TABLE IF NOT EXISTS histories (cnt INT UNIQUE NOT NULL AUTO_INCREMENT, problem VARCHAR(100) NOT NULL, user VARCHAR(100) NOT NULL, type CHAR(6) NOT NULL DEFAULT \'UNKNWN\', arg VARCHAR(100), date DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user) REFERENCES users(user));');
         if ((await sql.query('SELECT COUNT(1) FROM INFORMATION_SCHEMA.STATISTICS WHERE table_schema=DATABASE() AND table_name=\'histories\' AND index_name=\'problemIndex\';'))[0][0]['COUNT(1)'] <= 0) await sql.query('CREATE INDEX problemIndex ON histories (problem);');
@@ -1827,9 +2140,9 @@ async function loadProblems() {
     for (num in content.problems) {
         const problem = content.problems[num];
         if ((await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(num)};`))[0][0]['COUNT(1)'] >= 1) {
-            await sql.query(`UPDATE problems SET title = ${mysql.escape(problem.title)}, gradingStyle = ${mysql.escape(problem.gradingStyle)} WHERE num = ${mysql.escape(num)};`);
+            await sql.query(`UPDATE problems SET title = ${mysql.escape(problem.title)} WHERE num = ${mysql.escape(num)};`);
         } else {
-            await sql.query(`INSERT INTO problems (num, title, gradingStyle) VALUES (${mysql.escape(num)}, ${mysql.escape(problem.title)}, ${mysql.escape(problem.gradingStyle)});`);
+            await sql.query(`INSERT INTO problems (num, title) VALUES (${mysql.escape(num)}, ${mysql.escape(problem.title)});`);
         }
         if ((await sql.query(`SELECT COUNT(1) FROM redirections WHERE num = ${mysql.escape(num)};`))[0][0]['COUNT(1)'] >= 1) {
             await sql.query(`DELETE FROM redirections WHERE num = ${mysql.escape(num)};`);
@@ -1864,9 +2177,9 @@ async function saveProblem(num, newProb) {
     content.problems[num] = newProb;
     await fs.writeFile('archive/problems.json', JSON.stringify(content));
     if ((await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(num)};`))[0][0]['COUNT(1)'] >= 1) {
-        await sql.query(`UPDATE problems SET title = ${mysql.escape(newProb.title)}, gradingStyle = ${mysql.escape(newProb.gradingStyle)} WHERE num = ${mysql.escape(num)};`);
+        await sql.query(`UPDATE problems SET title = ${mysql.escape(newProb.title)} WHERE num = ${mysql.escape(num)};`);
     } else {
-        await sql.query(`INSERT INTO problems (num, title, gradingStyle) VALUES (${mysql.escape(num)}, ${mysql.escape(newProb.title)}, ${mysql.escape(newProb.gradingStyle)});`);
+        await sql.query(`INSERT INTO problems (num, title) VALUES (${mysql.escape(num)}, ${mysql.escape(newProb.title)});`);
     }
     if ((await sql.query(`SELECT COUNT(1) FROM redirections WHERE num = ${mysql.escape(num)};`))[0][0]['COUNT(1)'] >= 1) {
         await sql.query(`DELETE FROM redirections WHERE num = ${mysql.escape(num)};`);
@@ -1908,10 +2221,7 @@ function getHistory(title, user, type, arg) {
     else if (type === 'EDTSOL') return `${user} edited the solution ${arg} of the problem ${title}`;
     else if (type === 'RMVSOL') return `${user} removed the solution ${arg} from the problem ${title}`;
     else if (type === 'EDTTTL') return `${user} renamed the problem ${title} → now ${arg}`;
-    else if (type === 'EDTGST') {
-        if (arg === 'ungradable') return `${user} reported ${title} now ungradable`;
-        else return `${user} reported ${title} now gradable with ${arg}`;
-    } else if (type === 'RMVPRB') return `${user} removed the problem ${title}`;
+    else if (type === 'RMVPRB') return `${user} removed the problem ${title}`;
     else if (type === 'RMVRDR') return `${user} removed the redirection ${title}`;
     else if (type === 'EDTEXP') return `${user} edited examples of the problem ${title}`;
     else if (type === 'ODRREV') return `${user} ordered reevaluation on the problem ${title}`;
@@ -1950,12 +2260,13 @@ function replaceExamples(content, examples) {
 function erase(x) {
     if (socketList[x] === undefined) return;
     if (socketList[x].id) {
-        if (socketList[x].type === 'ioiSimple' && idSockets[socketList[x].id]) {
+        if (socketList[x].type === 'execute' && idSockets[socketList[x].id]) {
             var k = idSockets[socketList[x].id].indexOf(x);
             if (k != -1) idSockets[socketList[x].id].splice(k, 1);
             if (idSockets[socketList[x].id].length == 0) delete idSockets[socketList[x].id];
         }
         if (socketList[x].type === 'checker') delete checkerSocket[socketList[x].id];
+        if (socketList[x].type === 'grading') delete gradingSocket[socketList[x].id];
     }
     delete socketList[x].id;
 }
@@ -1970,7 +2281,7 @@ io.on('connection', function (socket) {
     });
     socket.on('id', async function (data) {
         erase(socket.id);
-        if (data.type === 'ioiSimple') {
+        if (data.type === 'execute') {
             if (socketList[socket.id].id) return;
             socketList[socket.id].id = data.id;
             socketList[socket.id].type = data.type;
@@ -1987,6 +2298,11 @@ io.on('connection', function (socket) {
             socketList[socket.id].id = data.id;
             socketList[socket.id].type = data.type;
             checkerSocket[data.id] = socket.id;
+        } else if (data.type === 'grading') {
+            if (socketList[socket.id].id) return;
+            socketList[socket.id].id = data.id;
+            socketList[socket.id].type = data.type;
+            gradingSocket[data.id] = socket.id;
         }
     });
     socket.emit('hello');

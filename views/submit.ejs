@@ -1,36 +1,47 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><%= title %></title>
-    <style>
-        textarea {
-            width: 700px;
-            height: 300px;
-        }
-        code {
-            white-space: pre-wrap;
-        }
-    </style>
+    <%- include('head.ejs') %>
 </head>
 <body>
-    <h1><%= title %></h1>
-    <form method="POST" action="/submit/<%= num %>" accept-charset="utf-8" id="submit" enctype="multipart/form-data">
-        Language: C++20<br>
-        Username: <%= user.user %><br>
-<% if (error) { %><span style="color: red;"><%= error %></span><% } %>
-<% if (stderr) { %><code style="color: red;"><%= stderr %></code><% } %>
-<% if (message) { %><span style="color: blue;"><%= error %></span><% } %>
-        <textarea name="code" <% if (error) { %>readonly<% } %>><%= code %></textarea><br>
-    </form>
-    <form method="POST" action="/submit/<%= num %>/retry" accept-charset="utf-8" id="retry"></form>
-<% if (error) { %>
-        <button type="submit" form="submit">Submit</button>
-        <button type="submit" form="retry">Edit</button>
-<% } else { %>
-        <button type="submit" form="submit">Submit</button>
-<% } %>
-    <a href="/view/<%= num %>">Back</a>
+    <div class="container">
+        <h1><%= title %></h1>
+        <form method="POST" action="/submit/<%= num %>" accept-charset="utf-8" id="submit" enctype="multipart/form-data">
+            Language <select name="lang" id="lang" onchange="change();">
+<% grading.languages.forEach(function (item) { %>
+                <option value="<%= item.lang %>"><%= item.langName %></option>
+<% }); %>
+            </select>
+    <% if (error) { %><span style="color: red;"><%= error %></span><% } %>
+    <% if (stderr) { %><code style="color: red;"><%= stderr %></code><% } %>
+    <% if (message) { %><span style="color: blue;"><%= error %></span><% } %>
+            <div id="submittings">
+            </div>
+        </form>
+        <form method="POST" action="/submit/<%= num %>/retry" accept-charset="utf-8" id="retry"></form>
+    <% if (error) { %>
+            <button type="submit" form="submit">Submit</button>
+            <button type="submit" form="retry">Edit</button>
+    <% } else { %>
+            <button type="submit" form="submit">Submit</button>
+    <% } %>
+        <a href="/view/<%= num %>">Back</a>
+        <script>
+            function change() {
+                var val = $('#lang').val();
+                var submittings = $('#submittings');
+                submittings.html('');
+<% grading.languages.forEach(function (item) { %>
+                if (val === '<%= item.lang %>') {
+<% item.submittings.forEach(function (item) { %>
+                    submittings.append(`<span><%= item %></span><textarea class="submission" name="code-<%= item %>"></textarea>`);
+<% }); %>
+                }
+<% }); %>
+            }
+            change();
+        </script>
+    </div>
 </body>
 </html>

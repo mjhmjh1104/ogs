@@ -1,83 +1,9 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <base href="/view/<%= num %>/" />
-    <script src="//code.jquery.com/jquery-1.12.4.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
-    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
     <title><%= info.title %></title>
-    <style>
-        .description, .marked {
-            white-space: pre-wrap;
-        }
-        iframe {
-            width: 800px;
-            height: 1000px;
-        }
-        *:not(.MJX-TEX *) {
-            font-family: sans-serif;
-            color: #333;
-        }
-        *, p, ul, ol, li {
-            margin: 0;
-            margin-block: 0;
-        }
-        p {
-            line-height: 30px;
-        }
-        li {
-            margin-top: -5px;
-        }
-        table {
-            border-collapse: collapse;
-            width: 100%;
-        }
-        th, td {
-            border: 1px #888 solid;
-            padding: 12px 15px;
-        }
-        .container {
-            margin: 100px auto;
-            width: 850px;
-        }
-        h1, h2, h3, h4, h5, h6 {
-            border-bottom: 1px #ccc solid;
-            margin-bottom: 15px;
-        }
-        code, .code {
-            border: 1px #aaa solid;
-            padding: 5px 10px;
-            background-color: #eee;
-            font-family: 'Menlo', 'Consolas', Arial, sans-serif !important;
-        }
-        code {
-            display: inline-block;
-            line-height: normal;
-        }
-        .code {
-            display: block;
-        }
-        .code * {
-            font-family: 'Menlo', 'Consolas', Arial, sans-serif !important;
-        }
-        .example {
-            width: 100%;
-            display: inline-block;
-        }
-        .input {
-            width: calc(50% - 4px);
-            margin-right: 4px;
-            float: left;
-        }
-        .output {
-            width: calc(50% - 4px);
-            margin-left: 4px;
-            float: left;
-        }
-    </style>
+    <base href="/view/<%= num %>/" />
+    <%- include('head.ejs') %>
 </head>
 <body>
     <div class="container">
@@ -103,14 +29,14 @@
             <tr>
                 <td># submissions</td>
                 <td># acceptions</td>
-                <% if (info.tl) { %><td>Time Limit</td><% } %>
-                <% if (info.ml) { %><td>Memory Limit</td><% } %>
+                <% if (info.tl !== undefined) { %><td>Time Limit</td><% } %>
+                <% if (info.ml !== undefined) { %><td>Memory Limit</td><% } %>
             </tr>
             <tr>
                 <td><%= infoSql.submitCnt %></td>
                 <td><%= infoSql.correctCnt %></td>
-                <% if (info.tl) { %><td><%= info.tl / 1000 %> second<% if (info.tl != 1000) { %>s<% } %></td><% } %>
-                <% if (info.ml) { %><td><%= info.ml / 1000000 %> MiB</td><% } %>
+                <% if (info.tl !== undefined) { %><td><%= info.tl / 1000 %> second<% if (info.tl != 1000) { %>s<% } %></td><% } %>
+                <% if (info.ml !== undefined) { %><td><%= info.ml / 1000000 %> MiB</td><% } %>
             </tr>
         </table>
         <% if (redr) { %><p>Redirected to <a href="/view/<%= num %>"><%= info.title %></a></p><% } %>
@@ -127,7 +53,7 @@
     <% } %>
     <% }); %>
         <br>
-        <% if (info.gradingStyle !== 'ungradable') { %><a href="/submit/<%= num %>">Submit</a><% } %>
+        <% if (gradable) { %><a href="/submit/<%= num %>">Submit</a><% } %>
         <a href="/submissions/<%= num %>">List</a>
         <a href="/">Main</a>
         <% if (info.solutions) { %><a href="/solutions/<%= num %>">Solutions</a><% } %>
@@ -141,7 +67,8 @@
     </script>
     <script>
         $('.marked').each(function () {
-            $(this).html(marked.parse($(this).html()));
+            console.log($(this).html());
+            $(this).html(marked.parse($(this).html()).replace(/(?![^<]*>|[^<>]*<\/)(\s*\n)+/g, ''));
         });
     </script>
     <script>

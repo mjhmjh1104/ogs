@@ -3,6 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="//code.jquery.com/jquery-1.12.4.min.js"></script>
     <title>OGS</title>
 </head>
 <body>
@@ -15,10 +16,17 @@
         </select>
         <% if (helper && helper.length > 0) { %><button type="submit">Delete</button><% } %>
     </form>
+    <button type="button" onclick="view();">View</button>
     <form method="POST" action="/helper/<%= num %>" accept-charset="utf-8" enctype="multipart/form-data">
         <input type="file" name="upload"> as <input type="text" name="name">
         <button type="submit">Upload</button>
     </form>
     <a href="/view/<%= num %>">Back</a>
+
+    <script>
+        function view() {
+            window.location.href = `/helper/<%= num %>/${$('select[name=helper]').val()}`;
+        }
+    </script>
 </body>
 </html>

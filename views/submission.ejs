@@ -1,49 +1,86 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><%= submission.id %></title>
-    <style>
-        .var {
-            display: inline;
-        }
-        code {
-            white-space: pre-wrap;
-        }
-    </style>
+    <%- include('head.ejs') %>
 </head>
 <body>
-    <h1>Submission #<%= submission.cnt %></h1>
-    <code><%= code %></code><br>
-    Submitted on <%= submission.submitDate %> by <%= submission.user %><br>
-    Time: <div id="time" class="var"><%= submission.time %></div> milliseconds<br>
-    Memory: <div id="mem" class="var"><%= submission.memory %></div> bytes<br>
-    Result: <div id="result" class="var"><%= getResult(submission.result) %></div><br>
-    Progress: <div id="prog" class="var">100%</div><br>
-<% if (user && (user.user === submission.user || user.admin)) { %>
-    <form method="POST" action="/detail/<%= submission.id %>/delete" accept-charset="utf-8">
-        <button type="submit">Remove</button> <% if (user.admin && user.user !== submission.user) { %> (as admin) <% } %>
-    </form>
-<% } %>
-    <a href="/view/<%= submission.problem %>">Problem</a>
-    <a href="/submissions/<%= submission.problem %>">List</a>
+    <div class="container">
+        <h1>Submission #<%= submission.cnt %></h1>
+    <% for (idx in code) { %>
+        <span><%= idx %></span><br>
+        <code><%= code[idx] %></code><br>
+    <% } %>
+        Submitted on <%= submission.submitDate %> by <%= submission.user %><br>
+        <table id="table">
+            <tr>
+                <th>Subtask</th>
+                <th>Progress</th>
+                <th>Time</th>
+                <th>Memory</th>
+                <th>Result</th>
+                <th>Marks</th>
+            </tr>
+            <tr>
+                <td>Total</td>
+                <td style="background-color: black;"><div id="prog" class="progressBar" style="width: 100%;"></div></td>
+                <td><span id="time"><%= submission.time %></span> milliseconds</td>
+                <td><span id="mem"><%= submission.memory %></span> bytes</td>
+                <td><span id="result"><%= getResult(submission.result) %></span></td>
+                <td><span id="marks"><%= submission.marks %></span></td>
+            </tr>
+<% subtasks.forEach(function (item) { %>
+            <tr id="<%= item.subtask %>">
+                <td><%= item.subtask %></td>
+                <td style="background-color: black;"><div id="<%= item.subtask %>prog" class="progressBar" style="width: 100%;"></div></td>
+                <td><span id="<%= item.subtask %>time"><%= item.time %></span> milliseconds</td>
+                <td><span id="<%= item.subtask %>mem"><%= item.mem %></span> bytes</td>
+                <td><span id="<%= item.subtask %>result"><%= getResult(item.result) %></span></td>
+                <td><span id="<%= item.subtask %>marks"><%= item.marks %></span></td>
+            </tr>
+<% }); %>
+        </table>
+    <% if (user && (user.user === submission.user || user.admin)) { %>
+        <form method="POST" action="/detail/<%= submission.id %>/delete" accept-charset="utf-8">
+            <button type="submit">Remove</button> <% if (user.admin && user.user !== submission.user) { %> (as admin) <% } %>
+        </form>
+    <% } %>
+        <a href="/view/<%= submission.problem %>">Problem</a>
+        <a href="/submissions/<%= submission.problem %>">List</a>
+    </div>
 
-    <script src="/socket.io/socket.io.js"></script>
-    <script src="//code.jquery.com/jquery-1.12.4.min.js"></script>
     <script>
         var socket = io();
         socket.on('hello', function (data) {
             socket.emit('id', {
                 id: '<%= submission.id %>',
-                type: '<%= submission.gradingStyle %>'
+                type: 'execute'
             });
         });
         socket.on('updt', function (data) {
-            $('#result').html(data.result);
-            $('#time').html(data.time);
-            $('#mem').html(data.mem);
-            if (data.progress !== undefined) $('#prog').html(data.progress * 100 + '%');
+            console.log(data);
+            if (data.progress !== undefined) $('#prog').width((data.progress * 100) + '%');
+            if (data.time !== undefined) $('#time').html(data.time);
+            if (data.mem !== undefined) $('#mem').html(data.mem);
+            if (data.result !== undefined) $('#result').html(data.result);
+            if (data.score !== undefined) $('#marks').html(data.score);
+            if (data.subProgress !== undefined) {
+                for (var i = 0; i < data.subProgress.length; i++) {
+                    if ($(`#${i + 1}`).length <= 0) $('#table').append(`<tr id="${i + 1}">
+                <td>${i + 1}</td>
+                <td style="background-color: black;"><div id="${i + 1}prog" class="progressBar" style="width: 0%;"></div></td>
+                <td><span id="${i + 1}time"></span> milliseconds</td>
+                <td><span id="${i + 1}mem"></span> bytes</td>
+                <td><span id="${i + 1}result"></span></td>
+                <td><span id="${i + 1}marks"></span></td>
+            </tr>`);
+                    $(`#${i + 1}prog`).width((data.subProgress[i] * 100) + '%');
+                    $(`#${i + 1}time`).html(data.subTime[i]);
+                    $(`#${i + 1}mem`).html(data.subMem[i]);
+                    $(`#${i + 1}result`).html(data.subResult[i]);
+                    $(`#${i + 1}marks`).html(data.subPoints[i]);
+                }
+            }
         });
     </script>
 </body>
