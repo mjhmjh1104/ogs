@@ -2161,14 +2161,17 @@ async function saveChecker(file, desc) {
 }
 
 async function removeChecker(file) {
-    var content = JSON.parse(await fs.readFile('grading/checkers.json'));
+    var content = { checkers: { }};
+    try {
+        content = JSON.parse(await fs.readFile('grading/checkers.json'));
+    } catch (e) { }
     delete content.checkers[file];
     await fs.writeFile('grading/checkers.json', JSON.stringify(content));
     await sql.query(`DELETE FROM checkers WHERE file = ${mysql.escape(file)}`);
 }
 
 async function loadProblems() {
-    var content = { checkers: { }};
+    var content = { problems: { }, redirections: { } };
     try {
         content = JSON.parse(await fs.readFile('archive/problems.json'));
     } catch (e) { }
@@ -2207,7 +2210,7 @@ async function loadProblems() {
 }
 
 async function saveProblem(num, newProb) {
-    var content = { checkers: { }};
+    var content = { problems: { }, redirections: { } };
     try {
         content = JSON.parse(await fs.readFile('archive/problems.json'));
     } catch (e) { }
@@ -2225,7 +2228,7 @@ async function saveProblem(num, newProb) {
 }
 
 async function saveRedirection(num, newRedr) {
-    var content = { checkers: { }};
+    var content = { problems: { }, redirections: { } };
     try {
         content = JSON.parse(await fs.readFile('archive/problems.json'));
     } catch (e) { }
@@ -2243,7 +2246,7 @@ async function saveRedirection(num, newRedr) {
 }
 
 async function removeProblem(num) {
-    var content = { checkers: { }};
+    var content = { problems: { }, redirections: { }};
     try {
         content = JSON.parse(await fs.readFile('archive/problems.json'));
     } catch (e) { }
