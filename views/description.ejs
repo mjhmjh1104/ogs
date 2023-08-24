@@ -59,7 +59,9 @@
                 if (change === $('#content').val()) return;
                 change = $('#content').val();
                 $('#hidden').html(marked.parse($('#content').val()).replace(/(?![^<]*>|[^<>]*<\/)(\s*\n)+/g, ''));
-                MathJax.typeset();
+                try {
+                    MathJax.typeset();
+                } catch (e) { }
                 $('#preview div').html($('#hidden').html());
             }, 200);
         }, 1000);
