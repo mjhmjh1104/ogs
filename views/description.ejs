@@ -51,6 +51,9 @@
         });
 
         var change = '';
+        MathJax = {
+            tex: { inlineMath: [ [ '$', '$' ], [ '\\(', '\\)' ] ] }
+        };
         setTimeout(function () {
             setInterval(function () {
                 if (change === $('#content').val()) return;
@@ -65,11 +68,6 @@
         $('.marked').each(function () {
             $(this).html(marked.parse($(this).html()).replace(/(?![^<]*>|[^<>]*<\/)(\s*\n)+/g, ''));
         });
-    </script>
-    <script>
-        MathJax = {
-            tex: { inlineMath: [ [ '$', '$' ], [ '\\(', '\\)' ] ] }
-        };
     </script>
 </body>
 </html>
