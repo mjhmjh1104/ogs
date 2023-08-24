@@ -88,7 +88,7 @@
                     <td>0</td>
                     <td><select>
 <% languages.forEach(function (item2, idx) { %>
-    <option value="<%= item2.id %>"<% if (item2.id = item.lang) {%> selected<% } %>><%= item2.name %></option>
+    <option value="<%= item2.id %>"<% if (item2.id === item.lang) {%> selected<% } %>><%= item2.name %></option>
 <% }); %>
                     </select></td>
                     <td><input type="text" value="<%= item.args %>"></td>
