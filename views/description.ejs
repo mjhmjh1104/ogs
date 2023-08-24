@@ -51,13 +51,15 @@
         });
 
         var change = '';
-        setInterval(function () {
-            if (change === $('#content').val()) return;
-            change = $('#content').val();
-            $('#hidden').html(marked.parse($('#content').val()).replace(/(?![^<]*>|[^<>]*<\/)(\s*\n)+/g, ''));
-            MathJax.typeset();
-            $('#preview div').html($('#hidden').html());
-        }, 200);
+        setTimeout(function () {
+            setInterval(function () {
+                if (change === $('#content').val()) return;
+                change = $('#content').val();
+                $('#hidden').html(marked.parse($('#content').val()).replace(/(?![^<]*>|[^<>]*<\/)(\s*\n)+/g, ''));
+                MathJax.typeset();
+                $('#preview div').html($('#hidden').html());
+            }, 200);
+        }, 1000);
     </script>
     <script>
         $('.marked').each(function () {
