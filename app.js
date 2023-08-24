@@ -326,6 +326,14 @@ app.get('/view/:num', async function (req, res) {
     });
 });
 
+app.get('/view/:num/providing/*', async function (req, res) {
+    var pt = req.params[0] ? req.params[0] : '';
+    if (!pt) return res.send('Not Found');
+    res.sendFile(pt, {
+        root: path.join(__dirname, `archive/${req.params.num}/providing`)
+    });
+});
+
 app.get('/add/:num', async function (req, res) {
     if (!req.session.auth) return res.redirect(`/view/${req.params.num}`);
     if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
@@ -827,11 +835,29 @@ app.post('/solution/:num/delete', async function (req, res) {
 });
 
 app.post('/description/:num/add', async function (req, res) {
-    if (!req.session.auth) return res.redirect('/signin');
-    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    var info = { };
+    try {
+        info = JSON.parse(await fs.readFile(`archive/${req.params.num}/info.json`));
+    } catch (e) { }
+    if (!req.session.auth) return res.render('description', {
+        error: 'Not signed in',
+        data: req.body,
+        num: req.params.num,
+        providing: info.providing
+    });
+    if (!req.session.auth.admin) return res.render('description', {
+        error: 'No permission',
+        data: req.body,
+        num: req.params.num,
+        providing: info.providing
+    });
     const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
-    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
-    var info = JSON.parse(await fs.readFile(`archive/${req.params.num}/info.json`));
+    if (rows[0]['COUNT(1)'] <= 0) return res.render('description', {
+        error: 'Problem moved or deleted',
+        data: req.body,
+        num: req.params.num,
+        providing: info.providing
+    });
     if (!req.body.desc) return res.render('description', {
         error: 'Name empty',
         data: req.body,
