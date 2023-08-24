@@ -50,7 +50,7 @@
 <% }); %>
                     </select></td>
                     <td><input type="text" value="<%= item.regex %>"></td>
-                    <td><div class="progressBar"></div><select>
+                    <td><div class="progressBar progressYellow"></div><select>
     <option value="none"<% if ('none' === item.validator) { %> selected<% } %>>None</option>
 <% helper.forEach(function (item2, idx) { %>
     <option value="helper/<%= item2 %>"<% if ('helper/' + item2 === item.validator) { %> selected<% } %>><%= item2 %></option>
@@ -319,7 +319,6 @@
         }
 
         socket.on('updt', function (data) {
-            console.log(data);
             if (data.result.result === 'AC') window.location.href = '/view/<%= num %>';
             else if (data.result.result === 'DA') {
                 $(`#subtask tr:eq(${data.result.subtask}) td:eq(7) .progressBar`).width((data.result.progress * 100) + '%');

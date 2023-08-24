@@ -7,6 +7,7 @@
 <body>
     <div class="container">
         <h1>Submission #<%= submission.cnt %></h1>
+        <code id="stderr" style="color: red;"><%= log %></code><br>
     <% for (idx in code) { %>
         <span><%= idx %></span><br>
         <code><%= code[idx] %></code><br>
@@ -15,7 +16,6 @@
         <table id="table">
             <tr>
                 <th>Subtask</th>
-                <th>Progress</th>
                 <th>Time</th>
                 <th>Memory</th>
                 <th>Result</th>
@@ -23,19 +23,17 @@
             </tr>
             <tr>
                 <td>Total</td>
-                <td style="background-color: black;"><div id="prog" class="progressBar" style="width: 100%;"></div></td>
                 <td><span id="time"><%= submission.time %></span> milliseconds</td>
                 <td><span id="mem"><%= submission.memory %></span> bytes</td>
-                <td><span id="result"><%= getResult(submission.result) %></span></td>
-                <td><span id="marks"><%= submission.marks %></span></td>
+                <td style="background-color: black; text-align: center;"><div id="prog" class="progressBar <%= (submission.result !== 'AC' && submission.result !== 'GD' ? submission.result === 'PC' ? 'progressYellow' : 'progressRed' : submission.marks >= max ? 'progressGreen' : 'progressYellow') %>" style="width: 100%;"></div><span id="result" class="onProgressBar"><%= getResult(submission.result) %></span></td>
+                <td style="background-color: black;"><div id="marksBar" class="progressBar progressGreen" style="width: <%= submission.marks / max * 100 %>%;"></div><span id="marks" class="onProgressBar"><%= submission.marks %></span></td>
             </tr>
 <% subtasks.forEach(function (item) { %>
             <tr id="<%= item.subtask %>">
                 <td><%= item.subtask %></td>
-                <td style="background-color: black;"><div id="<%= item.subtask %>prog" class="progressBar" style="width: 100%;"></div></td>
                 <td><span id="<%= item.subtask %>time"><%= item.time %></span> milliseconds</td>
                 <td><span id="<%= item.subtask %>mem"><%= item.mem %></span> bytes</td>
-                <td><span id="<%= item.subtask %>result"><%= getResult(item.result) %></span></td>
+                <td style="background-color: black; text-align: center;"><div id="<%= item.subtask %>prog" class="progressBar <%= (item.result !== 'AC' ? 'progressRed' : item.marks >= item.max ? 'progressGreen' : 'progressYellow') %>" style="width: 100%;"></div><span id="<%= item.subtask %>result" class="onProgressBar"><%= getResult(item.result) %></span></td>
                 <td><span id="<%= item.subtask %>marks"><%= item.marks %></span></td>
             </tr>
 <% }); %>
@@ -59,28 +57,67 @@
         });
         socket.on('updt', function (data) {
             console.log(data);
-            if (data.progress !== undefined) $('#prog').width((data.progress * 100) + '%');
+            if (data.result === 'Marking' && ($('#result').html() !== 'Marking' && $('#result').html() !== 'Downloading Data' && $('#result').html() !== 'Compiling' && $('#result').html() !== 'Preparing Data')) return;
+            if (data.progress !== undefined) {
+                if (data.result !== 'Accepted' && data.result !== 'Marking') {
+                    if (data.result === 'Partially Correct') {
+                        $('#prog').removeClass('progressRed');
+                        $('#prog').addClass('progressYellow');
+                    } else {
+                        $('#prog').removeClass('progressYellow');
+                        $('#prog').removeClass('progressGreen');
+                        $('#prog').addClass('progressRed');
+                    }
+                    $(`#prog`).width('100%');
+                } else {
+                    $('#prog').removeClass('progressRed');
+                    $('#prog').width((data.progress * 100) + '%');
+                    if (data.progress >= 1) {
+                        $('#prog').removeClass('progressYellow');
+                        $('#prog').addClass('progressGreen');
+                    } else $('#prog').addClass('progressYellow');
+                }
+            }
             if (data.time !== undefined) $('#time').html(data.time);
             if (data.mem !== undefined) $('#mem').html(data.mem);
             if (data.result !== undefined) $('#result').html(data.result);
-            if (data.score !== undefined) $('#marks').html(data.score);
+            if (data.score !== undefined) {
+                $('#marks').html(data.score);
+                $('#marksBar').width((data.score / <%= max %> * 100) + '%');
+            }
             if (data.subProgress !== undefined) {
                 for (var i = 0; i < data.subProgress.length; i++) {
                     if ($(`#${i + 1}`).length <= 0) $('#table').append(`<tr id="${i + 1}">
                 <td>${i + 1}</td>
-                <td style="background-color: black;"><div id="${i + 1}prog" class="progressBar" style="width: 0%;"></div></td>
                 <td><span id="${i + 1}time"></span> milliseconds</td>
                 <td><span id="${i + 1}mem"></span> bytes</td>
-                <td><span id="${i + 1}result"></span></td>
+                <td style="background-color: black; text-align: center;"><div id="${i + 1}prog" class="progressBar progressYellow" style="width: 0%;"></div><span id="${i + 1}result" class="onProgressBar"></span></td>
                 <td><span id="${i + 1}marks"></span></td>
             </tr>`);
-                    $(`#${i + 1}prog`).width((data.subProgress[i] * 100) + '%');
+                    if (data.subResult[i] !== 'Accepted' && data.subResult[i] !== 'Marking') {
+                        if (data.subResult[i] === 'Partially Correct') {
+                            $(`#${i + 1}prog`).removeClass('progressRed');
+                            $(`#${i + 1}prog`).addClass('progressYellow');
+                        } else {
+                            $(`#${i + 1}prog`).removeClass('progressYellow');
+                            $(`#${i + 1}prog`).removeClass('progressGreen');
+                            $(`#${i + 1}prog`).addClass('progressRed');
+                        }
+                        $(`#${i + 1}prog`).width('100%');
+                    } else {
+                        $(`#${i + 1}prog`).width((data.subProgress[i] * 100) + '%');
+                        if (data.subProgress[i] >= 1) {
+                            $(`#${i + 1}prog`).removeClass('progressYellow');
+                            $(`#${i + 1}prog`).addClass('progressGreen');
+                        }
+                    }
                     $(`#${i + 1}time`).html(data.subTime[i]);
                     $(`#${i + 1}mem`).html(data.subMem[i]);
                     $(`#${i + 1}result`).html(data.subResult[i]);
                     $(`#${i + 1}marks`).html(data.subPoints[i]);
                 }
             }
+            $('#stderr').html(data.log);
         });
     </script>
 </body>

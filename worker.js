@@ -149,11 +149,12 @@ async function grade(submission) {
     var totaltime = 0;
     var totalwalltime = 0;
     var totalmem = 0;
-    var r = [ ], pts = [ ];
+    var r = [ ], pts = [ ], maxes = [ ];
     var grading = submission.grading;
     for (var i = 0; i < grading.subtask.length; i++) {
         r.push('AC');
         pts.push(1);
+        maxes.push(grading.subtask[i].marks);
     }
     try {
         tmpResult({
@@ -177,33 +178,41 @@ async function grade(submission) {
             done: 0
         }, submission.filename, submission.type);
         try {
-            for (var i = 0; i < grading.subtask.length; i++) await isolateExec('/files/compile-checker.sh', `/files/checker${i} /files/checker${i}.cpp`, 10, 21, 512 * 1024 * 1024, 1000, COMPILE_CHECKER_LOG);
+            for (var i = 0; i < grading.subtask.length; i++) await isolateExec('/files/compile-checker.sh', `/files/checker${i} /files/checker${i}.cpp`, 10, 21, 4 * 1024 * 1024 * 1024, 1000, COMPILE_CHECKER_LOG);
         } catch (e) {
             return {
                 result: 'FL'
             };
         }
         try {
-            console.log(submission.args);
-            await isolateExec('/files/compile.sh', submission.args, 10, 21, 512 * 1024 * 1024, 1000, COMPILE_LOG);
+            await isolateExec('/files/compile.sh', `${submission.args} --stderr=/files/compile.out`, 10, 21, 512 * 1024 * 1024, 1000, COMPILE_LOG);
         } catch (e) {
+            var cpMessage = (await fs.readFile(`grading/isolate/${data.workerNum}/compile.out`)).toString();
+            await exec(`cp "grading/isolate/${data.workerNum}/compile.out" "grading/messages/${submission.filename}"`);
             const status = await getLog(COMPILE_LOG, 'status');
             if (status == 'TO') return {
-                result: 'CL'
+                result: 'CL',
+                log: cpMessage
             };
             if (status == 'SG') return {
-                result: 'CR'
+                result: 'CR',
+                log: cpMessage
             };
             if (status == 'XX') return {
-                result: 'FL'
+                result: 'FL',
+                log: cpMessage
             };
             return {
-                result: 'CE'
+                result: 'CE',
+                log: cpMessage
             };
         }
+        var cpMessage = (await fs.readFile(`grading/isolate/${data.workerNum}/compile.out`)).toString();
+        await exec(`cp "grading/isolate/${data.workerNum}/compile.out" "grading/messages/${submission.filename}"`);
         tmpResult({
             result: 'FD',
-            done: 0
+            done: 0,
+            log: cpMessage
         }, submission.filename, submission.type);
         var datasets = [ ];
         await mkdir(`grading/isolate/${data.workerNum}/archive`);
@@ -257,7 +266,7 @@ async function grade(submission) {
                 for (var l = 0; l < grading.subtask.length; l++) for (var e = 0; e < subtask.length; e++) if (grading.subtask[l].hierarchy.includes(subtask[e]) && !subtask.includes(l)) subtask.push(l);
                 if (subtask.length <= 0) continue;
                 var realCnt = 0;
-                for (var l = 0; l < subtask.length; l++) if (!grading.subtask[l].finished) realCnt++;
+                for (var l = 0; l < subtask.length; l++) if (!grading.subtask[subtask[l]].finished) realCnt++;
                 if (realCnt <= 0) continue;
                 try {
                     var tmpTl = 0, tmpWl = 0, tmpMl = 0;
@@ -267,8 +276,6 @@ async function grade(submission) {
                         tmpMl = Math.max(tmpMl, grading.subtask[subtask[l]].ml);
                     }
                     const { stdout, stderr } = await isolateExec('/files/run.sh', `--stdin=/files/archive/data/${name}.in --stdout=/files/out --stderr=/files/err`, tmpTl / 1000, tmpWl / 1000, tmpMl, 2, EXEC_LOG);
-                    console.log('stdout', stdout);
-                    console.log('stderr', stderr);
                 } catch (e) { console.log(e); }
                 const status = await getLog(EXEC_LOG, 'status');
                 const time = parseFloat(await getLog(EXEC_LOG, 'time')) * 1000;
@@ -303,7 +310,8 @@ async function grade(submission) {
                             subTotal: subTotal,
                             subTime: subTime,
                             subWalltime: subWalltime,
-                            subMem: subMem
+                            subMem: subMem,
+                            max: maxes
                         }, submission.filename, submission.type);
                         continue;
                     }
@@ -325,7 +333,8 @@ async function grade(submission) {
                             subTotal: subTotal,
                             subTime: subTime,
                             subWalltime: subWalltime,
-                            subMem: subMem
+                            subMem: subMem,
+                            max: maxes
                         }, submission.filename, submission.type);
                         continue;
                     }
@@ -347,7 +356,8 @@ async function grade(submission) {
                             subTotal: subTotal,
                             subTime: subTime,
                             subWalltime: subWalltime,
-                            subMem: subMem
+                            subMem: subMem,
+                            max: maxes
                         }, submission.filename, submission.type);
                         continue;
                     }
@@ -369,7 +379,8 @@ async function grade(submission) {
                             subTotal: subTotal,
                             subTime: subTime,
                             subWalltime: subWalltime,
-                            subMem: subMem
+                            subMem: subMem,
+                            max: maxes
                         }, submission.filename, submission.type);
                         continue;
                     }
@@ -391,7 +402,8 @@ async function grade(submission) {
                             subTotal: subTotal,
                             subTime: subTime,
                             subWalltime: subWalltime,
-                            subMem: subMem
+                            subMem: subMem,
+                            max: maxes
                         }, submission.filename, submission.type);
                         continue;
                     }
@@ -413,7 +425,8 @@ async function grade(submission) {
                             subTotal: subTotal,
                             subTime: subTime,
                             subWalltime: subWalltime,
-                            subMem: subMem
+                            subMem: subMem,
+                            max: maxes
                         }, submission.filename, submission.type);
                         continue;
                     }
@@ -435,7 +448,8 @@ async function grade(submission) {
                             subTotal: subTotal,
                             subTime: subTime,
                             subWalltime: subWalltime,
-                            subMem: subMem
+                            subMem: subMem,
+                            max: maxes
                         }, submission.filename, submission.type);
                         continue;
                     }
@@ -457,12 +471,13 @@ async function grade(submission) {
                             subTotal: subTotal,
                             subTime: subTime,
                             subWalltime: subWalltime,
-                            subMem: subMem
+                            subMem: subMem,
+                            max: maxes
                         }, submission.filename, submission.type);
                         continue;
                     }
                     try {
-                        var res = await isolateExec(`/files/checker${num}`, `/files/archive/data/${name}.out /files/out`, 10, 21, 512 * 1024 * 1024, 1000, CHECK_LOG);
+                        var res = await isolateExec(`/files/checker${num}`, `/files/archive/data/${name}.out /files/out`, 10, 21, 4 * 1024 * 1024 * 1024, 1000, CHECK_LOG);
                         res.stderr = res.stderr.substr(0, 2);
                         if (res.stderr === 'WA') {
                             r[num] = 'WA';
@@ -482,7 +497,8 @@ async function grade(submission) {
                                 subTotal: subTotal,
                                 subTime: subTime,
                                 subWalltime: subWalltime,
-                                subMem: subMem
+                                subMem: subMem,
+                                max: maxes
                             }, submission.filename, submission.type);
                         } else if (res.stderr === 'PC') {
                             r[num] = 'PC';
@@ -501,7 +517,8 @@ async function grade(submission) {
                                 subTotal: subTotal,
                                 subTime: subTime,
                                 subWalltime: subWalltime,
-                                subMem: subMem
+                                subMem: subMem,
+                                max: maxes
                             }, submission.filename, submission.type);
                         } else if (res.stderr !== 'AC') {
                             r[num] = res.stderr;
@@ -521,11 +538,11 @@ async function grade(submission) {
                                 subTotal: subTotal,
                                 subTime: subTime,
                                 subWalltime: subWalltime,
-                                subMem: subMem
+                                subMem: subMem,
+                                max: maxes
                             }, submission.filename, submission.type);
                         }
                     } catch (e) {
-                        console.log(e);
                         r[num] = 'CD';
                         pts[num] = 0;
                         grading.subtask[num].finished = true;
@@ -543,7 +560,8 @@ async function grade(submission) {
                             subTotal: subTotal,
                             subTime: subTime,
                             subWalltime: subWalltime,
-                            subMem: subMem
+                            subMem: subMem,
+                            max: maxes
                         }, submission.filename, submission.type);
                     }
                 }
@@ -561,7 +579,8 @@ async function grade(submission) {
                     subTotal: subTotal,
                     subTime: subTime,
                     subWalltime: subWalltime,
-                    subMem: subMem
+                    subMem: subMem,
+                    max: maxes
                 }, submission.filename, submission.type);
             }
         }
@@ -599,7 +618,8 @@ async function grade(submission) {
         subTotal: subTotal,
         subTime: subTime,
         subWalltime: subWalltime,
-        subMem: subMem
+        subMem: subMem,
+        max: maxes
     };
 }
 
@@ -631,7 +651,6 @@ async function compile(submission) {
 }
 
 async function grading(submission) {
-    console.log(submission);
     const COMPILE_CHECKER_LOG = `grading/isolate/${data.workerNum}/compile_checker.log`;
     const EXEC_LOG = `grading/isolate/${data.workerNum}/exec.log`;
     var r = 'AC';
@@ -682,8 +701,6 @@ async function grading(submission) {
             hierarchies.push(subtask);
             submission.files.validators[idx].size = datafiles.length;
             var cnt = 0, total = 0;
-            console.log(hierarchies);
-            console.log(submission.files.validators);
             for (var g = 0; g < hierarchies.length; g++) {
                 var curr = -1;
                 for (var e = 0; e < submission.files.validators.length; e++) if (submission.files.validators[e].subtask == hierarchies[g]) curr = e;

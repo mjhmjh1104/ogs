@@ -214,21 +214,33 @@ app.get('/detail/:id', async function (req, res) {
     try {
         grading = JSON.parse(await fs.readFile(`archive/${problem}/grading.json`));
     } catch (e) { }
+    var sumPoint = 0;
+    if (grading.subtask) for (var i = 0; i < grading.subtask.length; i++) sumPoint += parseInt(grading.subtask[i].marks);
     var k = -1;
     for (var i = 0; i < grading.languages.length; i++) if (grading.languages[i].lang === rows[0].lang) k = i;
     if (k != -1) for (var i = 0; i < grading.languages[k].submittings.length; i++) {
         const name = grading.languages[k].submittings[i];
         code[name] = (await fs.readFile(`grading/submissions/${req.params.id}-${name}`)).toString();
     }
-    const [ rows2, fields2 ] = await sql.query(`SELECT subtask, result, marks, time, walltime, mem FROM subtasks WHERE id = ${mysql.escape(problem)} ORDER BY subtask`);
-    console.log(rows2);
+    const [ rows2, fields2 ] = await sql.query(`SELECT subtask, result, marks, time, walltime, mem FROM subtasks WHERE id = ${mysql.escape(req.params.id)} ORDER BY subtask`);
+    var subtasks = rows2;
+    for (var i = 0; i < subtasks.length; i++) {
+        subtasks[i].marks *= grading.subtask[parseInt(subtasks[i].subtask) - 1].marks;
+        subtasks[i].max = grading.subtask[parseInt(subtasks[i].subtask) - 1].marks;
+    }
+    var cpMessage = '';
+    try {
+        cpMessage = await fs.readFile(`grading/messages/${req.params.id}`);
+    } catch (e) { }
     return res.render('submission', {
         code: code,
         submission: rows[0],
         user: req.session.auth,
         getResult: getResult,
         grading: grading,
-        subtasks: rows2
+        subtasks: subtasks,
+        max: sumPoint,
+        log: cpMessage
     });
 });
 
@@ -1989,6 +2001,8 @@ const workerNum = 3;
                     if (msg.content.result.subDone !== undefined) for (var i = 0; i < msg.content.result.subDone.length; i++) subProgress.push(msg.content.result.subDone[i] / msg.content.result.subTotal[i]);
                     var subResult = [ ];
                     if (msg.content.result.subResult !== undefined) for (var i = 0; i < msg.content.result.subResult.length; i++) subResult.push(getResult(msg.content.result.subResult[i]));
+                    var subPoints = [ ];
+                    if (msg.content.result.subPoints !== undefined) for (var i = 0; i < msg.content.result.subPoints.length; i++) subPoints.push(msg.content.result.subPoints[i] * msg.content.result.max[i]);
                     if (idSockets[msg.content.id]) idSockets[msg.content.id].forEach(function (item, index, object) {
                         if (Date.now() - socketList[item].time > 24 * 60 * 60 * 1000) object.splice(index, 1);
                         io.to(item).emit('updt', {
@@ -1999,10 +2013,11 @@ const workerNum = 3;
                             progress: done,
                             subProgress: subProgress,
                             subResult: subResult,
-                            subPoints: msg.content.result.subPoints,
+                            subPoints: subPoints,
                             subTime: msg.content.result.subTime,
                             subWalltime: msg.content.result.subWalltime,
-                            subMem: msg.content.result.subMem
+                            subMem: msg.content.result.subMem,
+                            log: msg.content.result.log
                         });
                     });
                 } else if (msg.content.type === 'checker') {
