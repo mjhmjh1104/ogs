@@ -60,7 +60,7 @@ async function isolateExec(command, options, timeout, wallTimeout, memlimit, pro
         else dir += ` --dir=${bindings[idx].from}`;
         if (bindings[idx].options) dir += `:${bindings[idx].options}`
     }
-    return await exec(`isolate/isolate --env=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin --meta=${meta} --run ${command} ${options}${dir} --box-id=${data.workerNum} --cg --cg-mem=${parseInt(memlimit / 1024) + 5 * 1024} --mem=${parseInt(memlimit / 1024) + 5 * 1024} --time=${timeout} --wall-time=${wallTimeout} --extra-time=${5} --processes=${procNum}`);
+    return await exec(`isolate/isolate --env=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin --meta=${meta} --run ${command} ${options}${dir} --box-id=${data.workerNum} --cg --cg-mem=${parseInt(memlimit / 1024) + 5 * 1024} --time=${timeout} --wall-time=${wallTimeout} --extra-time=${5} --processes=${procNum}`);
 }
 
 parentPort.on('message', async function (msg) {

@@ -24,8 +24,7 @@
 <% for (var i = 0; ; i++) { %>
 <% if (!data[`${i}submitting`]) break; %>
         <div class="listEle" id="<%= i %>listEle">
-            <input type="hidden" name="<%= i %>submitting" value="<%= data[`${i}submitting`] %>
-            ">
+            <input type="hidden" name="<%= i %>submitting" value="<%= data[`${i}submitting`] %>">
             <input type="hidden" name="<%= i %>submittingEnabled" id="<%= i %>listEnable" value="<%= data[`${i}submittingEnabled`] %>">
             <%= data[`${i}submitting`] %>
             <span class="cross" onclick="$('#<%= i %>listEle').hide();$('#<%= i %>listEnable').val('false');">×</span>

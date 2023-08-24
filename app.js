@@ -1693,6 +1693,7 @@ app.get('/languages/edit/:idx', async function (req, res) {
     for (idx in languages[k].submittings) {
         const curr = languages[k].submittings[idx];
         data[`${idx}submitting`] = curr;
+        data[`${idx}submittingEnabled`] = true;
     }
     res.render('languagesAdd', {
         error: '',
