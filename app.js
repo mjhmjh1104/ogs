@@ -2146,11 +2146,6 @@ const workerNum = 3;
         await loadCheckers();
         await loadProblems();
         console.log('SQL config done');
-        const probs = (await sql.query('SELECT num FROM problems;'))[0];
-        probs.forEach(function (item) {
-            console.log(`Use ${`/prividing/${item.num}`} with ${`archive/${item.num}/providing`}`)
-            app.use(`/view/${item.num}/providing`, express.static(path.join(__dirname, `archive/${item.num}/providing`)));
-        });
 
         app.get('*', function (req, res) {
             return res.send('Not Found');
