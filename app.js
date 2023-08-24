@@ -254,6 +254,7 @@ app.get('/detail/:id', async function (req, res) {
 });
 
 app.post('/detail/:id/delete', async function (req, res) {
+    return res.redirect(`/detail/${req.params.id}`);
     const [ rows, fields ] = await sql.query(`SELECT user, result, problem FROM submissions WHERE id = ${mysql.escape(req.params.id)};`);
     if (rows.length <= 0) return res.send('Not Found');
     if (!req.session.auth) return res.redirect(`/detail/${req.params.id}`);
