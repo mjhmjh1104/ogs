@@ -2024,6 +2024,7 @@ const workerNum = 3;
                     if (msg.content.result.result === 'AC') {
                         const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM checkers WHERE file = ${mysql.escape(msg.content.id)};`);
                         if (rows[0]['COUNT(1)'] <= 0) await sql.query(`INSERT INTO checkers (file, description) VALUES (${mysql.escape(msg.content.id)}, ${mysql.escape(msg.content.description)});`);
+                        await saveChecker(msg.content.id, msg.content.description)
                     } else {
                         try {
                             await fs.unlink(`grading/checkers/${msg.content.id}.cpp`);
@@ -2121,7 +2122,10 @@ const workerNum = 3;
 })();
 
 async function loadCheckers() {
-    const content = JSON.parse(await fs.readFile('grading/checkers.json'));
+    var content = { checkers: { }};
+    try {
+        content = JSON.parse(await fs.readFile('grading/checkers.json'));
+    } catch (e) { }
     for (file in content.checkers) {
         const desc = content.checkers[file];
         if ((await sql.query(`SELECT COUNT(1) FROM checkers WHERE file = ${mysql.escape(file)};`))[0][0]['COUNT(1)'] >= 1) {
@@ -2133,7 +2137,10 @@ async function loadCheckers() {
 }
 
 async function saveChecker(file, desc) {
-    var content = JSON.parse(await fs.readFile('grading/checkers.json'));
+    var content = { checkers: { }};
+    try {
+        content = JSON.parse(await fs.readFile('grading/checkers.json'));
+    } catch (e) { }
     content.checkers[file] = desc;
     await fs.writeFile('grading/checkers.json', JSON.stringify(content));
     if ((await sql.query(`SELECT COUNT(1) FROM checkers WHERE file = ${mysql.escape(file)};`))[0][0]['COUNT(1)'] >= 1) {
@@ -2151,7 +2158,10 @@ async function removeChecker(file) {
 }
 
 async function loadProblems() {
-    const content = JSON.parse(await fs.readFile('archive/problems.json'));
+    var content = { checkers: { }};
+    try {
+        content = JSON.parse(await fs.readFile('archive/problems.json'));
+    } catch (e) { }
     for (num in content.problems) {
         const problem = content.problems[num];
         if ((await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(num)};`))[0][0]['COUNT(1)'] >= 1) {
@@ -2187,7 +2197,10 @@ async function loadProblems() {
 }
 
 async function saveProblem(num, newProb) {
-    var content = JSON.parse(await fs.readFile('archive/problems.json'));
+    var content = { checkers: { }};
+    try {
+        content = JSON.parse(await fs.readFile('archive/problems.json'));
+    } catch (e) { }
     delete content.redirections[num];
     content.problems[num] = newProb;
     await fs.writeFile('archive/problems.json', JSON.stringify(content));
@@ -2202,7 +2215,10 @@ async function saveProblem(num, newProb) {
 }
 
 async function saveRedirection(num, newRedr) {
-    var content = JSON.parse(await fs.readFile('archive/problems.json'));
+    var content = { checkers: { }};
+    try {
+        content = JSON.parse(await fs.readFile('archive/problems.json'));
+    } catch (e) { }
     delete content.problems[num];
     content.redirections[num] = newRedr;
     await fs.writeFile('archive/problems.json', JSON.stringify(content));
@@ -2217,7 +2233,10 @@ async function saveRedirection(num, newRedr) {
 }
 
 async function removeProblem(num) {
-    var content = JSON.parse(await fs.readFile('archive/problems.json'));
+    var content = { checkers: { }};
+    try {
+        content = JSON.parse(await fs.readFile('archive/problems.json'));
+    } catch (e) { }
     delete content.problems[num];
     delete content.redirections[num];
     await fs.writeFile('archive/problems.json', JSON.stringify(content));
