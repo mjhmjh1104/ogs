@@ -218,6 +218,15 @@ app.get('/detail/:id', async function (req, res) {
     if (grading.subtask) for (var i = 0; i < grading.subtask.length; i++) sumPoint += parseInt(grading.subtask[i].marks);
     var k = -1;
     for (var i = 0; i < grading.languages.length; i++) if (grading.languages[i].lang === rows[0].lang) k = i;
+    if (k != -1 && grading.languages[k].submittings.length <= 0) {
+        var languages = [ ];
+        try {
+            languages = JSON.parse(await fs.readFile('grading/languages.json'));
+        } catch (e) { }
+        var l = -1;
+        for (var j = 0; j < languages.length; j++) if (languages[i].id === grading.languages[k].lang) l = j;
+        if (l != -1) grading.languages[k].submittings = languages[l].submittings;
+    }
     if (k != -1) for (var i = 0; i < grading.languages[k].submittings.length; i++) {
         const name = grading.languages[k].submittings[i];
         code[name] = (await fs.readFile(`grading/submissions/${req.params.id}-${name}`)).toString();
