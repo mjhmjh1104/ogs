@@ -1549,10 +1549,12 @@ app.post('/data/:num/add', async function (req, res) {
         oldData = data[req.body.pidx];
         data.splice(req.body.pidx, 1);
     }
-    await fs.rmdir(`archive/${req.params.num}/data/tmp`, {
-        recursive: true,
-        force: true
-    });
+    try {
+        await fs.rmdir(`archive/${req.params.num}/data/tmp`, {
+            recursive: true,
+            force: true
+        });
+    } catch (e) { }
     await mkdir(`archive/${req.params.num}/data/tmp`);
     var fileList = [ ];
     if (req.body.edit === 'true') {
