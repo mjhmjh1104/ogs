@@ -233,10 +233,20 @@ app.get('/detail/:id', async function (req, res) {
     }
     const [ rows2, fields2 ] = await sql.query(`SELECT subtask, result, marks, time, walltime, mem FROM subtasks WHERE id = ${mysql.escape(req.params.id)} ORDER BY subtask`);
     var subtasks = rows2;
+    var tl = Infinity, ml = Infinity;
     for (var i = 0; i < subtasks.length; i++) {
         subtasks[i].marks *= grading.subtask[parseInt(subtasks[i].subtask) - 1].marks;
         subtasks[i].max = grading.subtask[parseInt(subtasks[i].subtask) - 1].marks;
     }
+    var subTl = [ ], subMl = [ ];
+    for (var i = 0; i < grading.subtask.length; i++) {
+        subTl.push(grading.subtask[i].tl);
+        subMl.push(grading.subtask[i].ml);
+        tl = Math.min(tl, grading.subtask[i].tl);
+        ml = Math.min(ml, grading.subtask[i].ml);
+    }
+    subTl.unshift(tl);
+    subMl.unshift(ml);
     var cpMessage = '';
     try {
         cpMessage = await fs.readFile(`grading/messages/${req.params.id}`);
@@ -249,7 +259,9 @@ app.get('/detail/:id', async function (req, res) {
         grading: grading,
         subtasks: subtasks,
         max: sumPoint,
-        log: cpMessage
+        log: cpMessage,
+        subTl: subTl,
+        subMl: subMl
     });
 });
 
@@ -527,7 +539,10 @@ app.post('/submit/:num', async function (req, res) {
     const args = grading.languages[k].args;
     const submittings = grading.languages[k].submittings;
     const id = genID();
-    for (var i = 0; i < submittings.length; i++) await fs.writeFile(`grading/submissions/${id}-${submittings[i]}`, req.body[`code-${submittings[i]}`].replace(/\r/g, ''));
+    for (var i = 0; i < submittings.length; i++) {
+        if (req.files && req.files[`upload-${submittings[i]}`]) await upload(req.files[`upload-${submittings[i]}`], `grading/submissions/${id}-${submittings[i]}`);
+        else await fs.writeFile(`grading/submissions/${id}-${submittings[i]}`, req.body[`code-${submittings[i]}`].replace(/\r/g, ''));
+    }
     queue.push({
         type: 'execute',
         filename: id,
@@ -576,6 +591,22 @@ app.get('/checkers/add', async function (req, res) {
     });
 });
 
+app.get('/checkers/edit/:idx', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect('/');
+    const [ rows, fields ] = await sql.query(`SELECT description FROM checkers WHERE file = ${mysql.escape(req.params.idx)}`);
+    if (rows.length <= 0) return res.redirect('/checkers');
+    const code = await fs.readFile(`grading/checkers/${req.params.idx}.cpp`);
+    res.render('checkerAdd', {
+        data: {
+            edit: true,
+            file: req.params.idx,
+            description: rows[0].description,
+            code: code
+        }
+    });
+});
+
 app.post('/checkers/add', async function (req, res) {
     if (!req.session.auth) return res.json({
         type: 'redirect',
@@ -594,7 +625,7 @@ app.post('/checkers/add', async function (req, res) {
         error: 'Filename is empty'
     });
     const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM checkers WHERE file = ${mysql.escape(req.body.file)}`);
-    if (rows[0]['COUNT(1)'] > 0) return res.json({
+    if (rows[0]['COUNT(1)'] > 0 && req.body.edit !== 'true') return res.json({
         type: 'error',
         error: 'File already exists'
     });
@@ -602,7 +633,8 @@ app.post('/checkers/add', async function (req, res) {
     queue.push({
         type: 'checker',
         filename: req.body.file,
-        description: req.body.description
+        description: req.body.description,
+        edit: req.body.edit
     });
     tryGrading();
     return res.json({
@@ -1930,7 +1962,7 @@ app.post('/grading/:num', async function (req, res) {
         var necessaries = [ ];
         for (var j = 0; ; j++) {
             if (req.body[`${i}-${j}helper`] === undefined) break;
-            if (req.body[`${i}-${j}helperEnabled`]) necessaries.push(req.body[`${i}-${j}helper`]);
+            if (req.body[`${i}-${j}helperEnabled`] === 'true') necessaries.push(req.body[`${i}-${j}helper`]);
         }
         for (var j = 0; j < necessaries.length; j++) {
             if (!helper.includes(necessaries[j])) return res.json({
@@ -2027,6 +2059,10 @@ const workerNum = 3;
                         const [ rows, fields ] = await sql.query(`SELECT result FROM submissions WHERE id = ${mysql.escape(msg.content.id)};`);
                         if (rows.length > 0 && rows[0].result !== 'AC') await sql.query(`UPDATE problems SET correctCnt = correctCnt + 1 WHERE num = ${mysql.escape(msg.content.problem)};`);
                     }
+                    if (msg.content.result.result == 'GD') {
+                        const [ rows, fields ] = await sql.query(`SELECT result FROM submissions WHERE id = ${mysql.escape(msg.content.id)};`);
+                        if (rows.length > 0 && (rows[0].result !== 'GD' && rows[0].result !== 'RD' && rows[0].result !== 'FD' && rows[0].result !== 'CP')) return;
+                    }
                     await sql.query(`UPDATE submissions SET result = ${mysql.escape(msg.content.result.result)}, marks = ${mysql.escape(msg.content.result.score)} WHERE id = ${mysql.escape(msg.content.id)};`);
                     if (msg.content.result.time !== undefined) await sql.query(`UPDATE submissions SET time = ${msg.content.result.time} WHERE id = ${mysql.escape(msg.content.id)};`);
                     if (msg.content.result.walltime !== undefined) await sql.query(`UPDATE submissions SET walltime = ${msg.content.result.walltime} WHERE id = ${mysql.escape(msg.content.id)};`);
@@ -2058,15 +2094,17 @@ const workerNum = 3;
                         });
                     });
                 } else if (msg.content.type === 'checker') {
-                    if (msg.content.result.result === 'AC') {
-                        const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM checkers WHERE file = ${mysql.escape(msg.content.id)};`);
-                        if (rows[0]['COUNT(1)'] <= 0) await sql.query(`INSERT INTO checkers (file, description) VALUES (${mysql.escape(msg.content.id)}, ${mysql.escape(msg.content.description)});`);
-                        await saveChecker(msg.content.id, msg.content.description)
-                    } else {
-                        try {
-                            await fs.unlink(`grading/checkers/${msg.content.id}.cpp`);
-                        } catch (e) { }
-                    }
+                    if (msg.content.edit !== 'true') {
+                        if (msg.content.result.result === 'AC') {
+                            const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM checkers WHERE file = ${mysql.escape(msg.content.id)};`);
+                            if (rows[0]['COUNT(1)'] <= 0) await sql.query(`INSERT INTO checkers (file, description) VALUES (${mysql.escape(msg.content.id)}, ${mysql.escape(msg.content.description)});`);
+                            await saveChecker(msg.content.id, msg.content.description)
+                        } else {
+                            try {
+                                await fs.unlink(`grading/checkers/${msg.content.id}.cpp`);
+                            } catch (e) { }
+                        }
+                    } else if (msg.content.result.result === 'AC') saveChecker(msg.content.id, msg.content.description);
                     if (checkerSocket[msg.content.id]) io.to(checkerSocket[msg.content.id]).emit('updt', {
                         result: msg.content.result
                     });
@@ -2096,11 +2134,11 @@ const workerNum = 3;
                             var submittings = [ ], necessaries = [ ];
                             for (var j = 0; ; j++) {
                                 if (body[`${i}-${j}submitting`] === undefined) break;
-                                if (body[`${i}-${j}submittingEnabled`]) submittings.push(body[`${i}-${j}submitting`]);
+                                if (body[`${i}-${j}submittingEnabled`] === 'true') submittings.push(body[`${i}-${j}submitting`]);
                             }
                             for (var j = 0; ; j++) {
                                 if (body[`${i}-${j}helper`] === undefined) break;
-                                if (body[`${i}-${j}helperEnabled`]) necessaries.push(body[`${i}-${j}helper`]);
+                                if (body[`${i}-${j}helperEnabled`] === 'true') necessaries.push(body[`${i}-${j}helper`]);
                             }
                             languages.push({
                                 lang: body[`${i}lang`],

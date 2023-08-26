@@ -1,5 +1,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto&display=swap" rel="stylesheet">
 <script src="//code.jquery.com/jquery-1.12.4.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
@@ -42,7 +45,7 @@
         height: 1000px;
     }
     *:not(.MJX-TEX *) {
-        font-family: sans-serif;
+        font-family: "Noto Sans KR", "Roboto", "Ubuntu", "Helvetica Neue", Helvetica, Arial, sans-serif;
         color: #333;
     }
     *, p, ul, ol, li {
@@ -58,7 +61,8 @@
     }
     th, td {
         border: 1px #888 solid;
-        padding: 12px 15px;
+        padding: 0 20px;
+        height: 60px;
     }
     .container {
         margin: 100px auto;
@@ -74,11 +78,13 @@
     li {
         margin: 7.5px 0;
     }
+    code, .code, code *, .code * {
+        font-family: 'Menlo', 'Consolas', 'Monospace', Arial, sans-serif !important;
+    }
     code, .code {
         border: 1px #aaa solid;
         padding: 5px 10px;
         background-color: #eee;
-        font-family: 'Menlo', 'Consolas', Arial, sans-serif !important;
         word-break: break-all;
     }
     code {
@@ -89,9 +95,6 @@
     .code {
         display: block;
         margin: 5px 0;
-    }
-    .code * {
-        font-family: 'Menlo', 'Consolas', Arial, sans-serif !important;
     }
     .example {
         width: 100%;
@@ -108,8 +111,9 @@
         float: left;
     }
     .submission {
-        width: 100%;
+        width: calc(100% - 50px);
         height: 500px;
+        resize: none;
     }
     .cross {
         margin-left: 5px;
@@ -128,18 +132,157 @@
         position: absolute;
         top: 0;
         left: 0;
+        overflow: hidden;
+        white-space: nowrap;
     }
     .progressYellow {
-        background-color: hsla(60, 100%, 50%, 0.4);
+        background-color: #ee6 !important;
     }
     .progressGreen {
-        background-color: hsla(120, 100%, 50%, 0.4);
+        background-color: #6e6 !important;
     }
     .progressRed {
-        background-color: hsla(0, 100%, 50%, 0.4);
+        background-color: #e66 !important;
     }
     .onProgressBar {
         color: white;
         position: relative;
     }
+    .onProgressBar * {
+        color: white;
+    }
+    .inProgressBar {
+        color: black;
+        margin: 0 20px;
+        line-height: 60px;
+    }
+    .inProgressBar * {
+        color: black;
+    }
+    .fileLabel {
+        background-color: #4F91FE;
+        padding: 5px 20px;
+        color: white;
+        width: calc(100% - 40px);
+        display: block;
+    }
+    button:active, input:active, button:focus, input:focus, textarea:active, textarea:focus, select:active, select:focus {
+        border: 1.5px solid #4F91FE;
+        border-width: 3px;
+        margin: 3px;
+    }
+    button, input, textarea, select {
+        text-decoration: none;
+        background-color: #FCFCFC;
+        -webkit-transition-duration: 0.4s;
+        transition-duration: 0.4s;
+        padding: 12px 20px;
+        font-size: 15px;
+        margin: 5px;
+        border: 1px solid #CCC;
+        position: relative;
+        cursor: pointer;
+    }
+
+    button {
+        overflow: hidden;
+    }
+    button:focus, button:active {
+        background-color: #E0E0E0;
+    }
+    .ripple {
+        width: 100px;
+        height: 100px;
+        border-radius: 50%;
+        background-color: #000;
+        transform: scale(2.5);
+        opacity: 0.32;
+        position: absolute;
+        animation: ripple 0.4s linear;
+        pointer-events: none !important;
+    }
+
+    @keyframes ripple {
+        0% {
+            transform: scale(0);
+            opacity: 0.32;
+        }
+        100% {
+            transform: scale(2.5);
+            opacity: 0;
+        }
+    }
+
+    .ok {
+        background-color: rgb(66, 133, 244);
+        color: white;
+    }
+
+    .ok:focus, .ok:active {
+        background-color: rgb(26, 83, 144);
+    }
+    form {
+        display: inline-block;
+    }
 </style>
+
+<script>
+    $(function () {
+        $('button').mousedown(createRipple);
+        $('textarea').keyup(grow);
+      setInterval(function () {
+        var curr = new Date().getTime();
+        while (ripples.length > 0 && ripples[0].time + 1000 < curr) {
+          // ripples[0].remove();
+          ripples.shift();
+        }
+      }, 100);
+    });
+
+    var ripples = [];
+
+    function offset(el, sc) {
+        var rect = el.getBoundingClientRect();
+        return { top: rect.top, left: rect.left }
+    }
+
+    function createRipple(e) {
+        console.log(this);
+      this.appendChild(actualRipple(e, this, true));
+    }
+
+    function actualRipple(e, th, sc) {
+      var circle = document.createElement('div');
+
+      var radius = Math.max(th.clientWidth, th.clientHeight);
+      circle.style.width = circle.style.height = radius + 'px';
+      var off = offset(th, sc);
+      circle.style.left = e.clientX - off.left - radius / 2 + 'px';
+      circle.style.top = e.clientY - off.top - radius / 2 + 'px';
+      console.log(e.clientX);
+      circle.style.opacity = 0;
+      circle.time = new Date().getTime();
+      ripples.push(circle);
+      circle.classList.add('ripple');
+      return circle;
+    }
+
+    function grow(e) {
+        autoGrow(this, e);
+    }
+
+    function autoGrow(th, e) {
+        if (Math.max(th.scrollHeight - 500, 500) + 'px' == th.style.height) return;
+        console.log(th.style.height);
+        console.log(Math.max(th.scrollHeight - 500, 500) + 'px');
+        th.style.height = Math.max(th.scrollHeight - 500, 500) + 'px';
+        setTimeout(function () {
+            autoGrow(th, e);
+        }, 100);
+    }
+
+    function includes(arr, entity) {
+      for (var i = 0; i < arr.length; i++) if (arr[i] == entity) return true;
+      return false;
+    }
+</script>

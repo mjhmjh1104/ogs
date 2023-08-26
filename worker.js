@@ -90,7 +90,8 @@ parentPort.on('message', async function (msg) {
                     id: msg.content.filename,
                     type: msg.content.type,
                     result: res,
-                    description: msg.content.description
+                    description: msg.content.description,
+                    edit: msg.content.edit
                 }
             });
         } else if (msg.content.type === 'grading') {
@@ -477,7 +478,7 @@ async function grade(submission) {
                         continue;
                     }
                     try {
-                        var res = await isolateExec(`/files/checker${num}`, `/files/archive/data/${name}.out /files/out`, 10, 21, 4 * 1024 * 1024 * 1024, 1000, CHECK_LOG);
+                        var res = await isolateExec(`/files/checker${num}`, `"/files/archive/data/${name}.in" "/files/archive/data/${name}.out" "/files/out"`, 10, 21, 4 * 1024 * 1024 * 1024, 1000, CHECK_LOG);
                         res.stderr = res.stderr.substr(0, 2);
                         if (res.stderr === 'WA') {
                             r[num] = 'WA';

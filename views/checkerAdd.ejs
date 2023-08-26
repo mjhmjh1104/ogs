@@ -16,6 +16,7 @@
         <span id="error" style="color: red;"></span>
         <span id="message" style="color: blue;"></span><br>
         <code id="stderr" style="color: red;"></code><br>
+        <input type="hidden" name="edit" value="<%= data.edit ? data.edit : 'false' %>">
         Filename <input type="text" name="file" value="<%= data.file %>">.cpp<br>
         Description <input type="text" name="description" value="<%= data.description %>"><br>
         Code <textarea name="code"><%= data.code %></textarea><br>

@@ -1,21 +1,22 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Sign in</title>
+    <%- include('head.ejs') %>
 </head>
 <body>
-    <form method="POST" action="/signin" accept-charset="utf-8">
-<% if (error) { %>
-        <span style="color: red;"><%= error %></span><br>
-<% } %>
-        Username <input name="user" value="<%= username %>"></input><br>
-        Password <input type="password" name="password"></input><br>
-        Session expires after 7 days / We hash your password one-way<br>
-        <button type="submit">Sign in</button>
-        <a href="/register">Register</a>
-        <a href="/">Main</a>
-    </form>
+    <div class="container">
+        <form method="POST" action="/signin" accept-charset="utf-8">
+    <% if (error) { %>
+            <span style="color: red;"><%= error %></span><br>
+    <% } %>
+            Username <input name="user" value="<%= username %>"></input><br>
+            Password <input type="password" name="password"></input><br>
+            Session expires after 7 days / We hash your password one-way<br>
+            <button type="submit" class="ok">Sign in</button>
+            <a href="/register"><button type="button">Register</button></a>
+            <a href="/"><button type="button">Main</button></a>
+        </form>
+    </div>
 </body>
 </html>

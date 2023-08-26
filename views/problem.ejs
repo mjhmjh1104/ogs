@@ -24,7 +24,11 @@
             <button type="submit">Remove</button>
         </form><br>
         <% } %>
-        <a href="/history/<%= num %>">History</a><br>
+        <a href="/history/<%= num %>"><button type="button">History</button></a><% if (gradable) { %><a href="/submit/<%= num %>"><button type="button" class="ok">Submit</button></a><% } %>
+        <a href="/submissions/<%= num %>"><button type="button">List</button></a>
+        <a href="/"><button type="button">Main</button></a>
+        <% if (info.solutions) { %><a href="/solutions/<%= num %>"><button type="button">Solutions</button></a><% } %>
+        <br>
         <table>
             <tr>
                 <td># submissions</td>
@@ -53,10 +57,10 @@
     <% } %>
     <% }); %>
         <br>
-        <% if (gradable) { %><a href="/submit/<%= num %>">Submit</a><% } %>
-        <a href="/submissions/<%= num %>">List</a>
-        <a href="/">Main</a>
-        <% if (info.solutions) { %><a href="/solutions/<%= num %>">Solutions</a><% } %>
+        <% if (gradable) { %><a href="/submit/<%= num %>"><button type="button" class="ok">Submit</button></a><% } %>
+        <a href="/submissions/<%= num %>"><button type="button">List</button></a>
+        <a href="/"><button type="button">Main</button></a>
+        <% if (info.solutions) { %><a href="/solutions/<%= num %>"><button type="button">Solutions</button></a><% } %>
     </div>
 
     <script>

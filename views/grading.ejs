@@ -155,8 +155,8 @@
                     $(this).find('input:eq(1)').attr('id', `${idx}-${idx2}hierarchyEnabled`);
                     $(this).find('span').off('click');
                     $(this).find('span').click(function () {
-                        $(`#${idx}-${len}hierarchyListEle`).hide();
-                        $(`#${idx}-${len}hierarchyEnabled`).val('false');
+                        $(`#${idx}-${idx2}hierarchyListEle`).hide();
+                        $(`#${idx}-${idx2}hierarchyEnabled`).val('false');
                     })
                 });
                 $(this).find('td:eq(5) select').attr('name', idx + 'dataset');
@@ -198,8 +198,8 @@
                     $(this).find('input:eq(1)').attr('id', `${idx}-${idx2}submittingsEnabled`);
                     $(this).find('span').off('click');
                     $(this).find('span').click(function () {
-                        $(`#${idx}-${len}submittingsListEle`).hide();
-                        $(`#${idx}-${len}submittingsEnabled`).val('false');
+                        $(`#${idx}-${idx2}submittingsListEle`).hide();
+                        $(`#${idx}-${idx2}submittingsEnabled`).val('false');
                     })
                 });
                 $(this).find('td:eq(4) textarea').attr('name', idx + 'sample');
@@ -219,8 +219,8 @@
                     $(this).find('input:eq(1)').attr('id', `${idx}-${idx2}necessariesEnabled`);
                     $(this).find('span').off('click');
                     $(this).find('span').click(function () {
-                        $(`#${idx}-${len}necessariesListEle`).hide();
-                        $(`#${idx}-${len}necessariesEnabled`).val('false');
+                        $(`#${idx}-${idx2}necessariesListEle`).hide();
+                        $(`#${idx}-${idx2}necessariesEnabled`).val('false');
                     })
                 });
                 $(this).find('td:eq(6) input').attr('name', idx + 'test');

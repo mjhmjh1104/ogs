@@ -7,7 +7,7 @@
 <body>
     <div class="container">
         <h1><%= title %></h1>
-        <form method="POST" action="/submit/<%= num %>" accept-charset="utf-8" id="submit" enctype="multipart/form-data">
+        <form method="POST" action="/submit/<%= num %>" accept-charset="utf-8" id="submit" enctype="multipart/form-data" style="width: 100%;">
             Language <select name="lang" id="lang" onchange="change();">
 <% grading.languages.forEach(function (item) { %>
                 <option value="<%= item.lang %>"><%= item.langName %></option>
@@ -19,14 +19,14 @@
             <div id="submittings">
             </div>
         </form>
-        <form method="POST" action="/submit/<%= num %>/retry" accept-charset="utf-8" id="retry"></form>
+        <form method="POST" action="/submit/<%= num %>/retry" accept-charset="utf-8" id="retry"></form><br>
     <% if (error) { %>
-            <button type="submit" form="submit">Submit</button>
+            <button type="submit" form="submit" class="ok">Submit</button>
             <button type="submit" form="retry">Edit</button>
     <% } else { %>
-            <button type="submit" form="submit">Submit</button>
+            <button type="submit" form="submit" class="ok">Submit</button>
     <% } %>
-        <a href="/view/<%= num %>">Back</a>
+        <a href="/view/<%= num %>"><button type="button">Back</button></a>
         <script>
             function change() {
                 var val = $('#lang').val();
@@ -35,7 +35,7 @@
 <% grading.languages.forEach(function (item) { %>
                 if (val === '<%= item.lang %>') {
 <% item.submittings.forEach(function (item) { %>
-                    submittings.append(`<span><%= item %></span><textarea class="submission" name="code-<%= item %>"></textarea>`);
+                    submittings.append(`<span class="fileLabel"><%= item %></span><input type="file" name="upload-<%= item %>"> or <textarea class="submission" name="code-<%= item %>"></textarea>`);
 <% }); %>
                 }
 <% }); %>
