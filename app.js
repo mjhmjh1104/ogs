@@ -104,11 +104,20 @@ app.use(session({
 }));
 app.use(cookieParser());
 
+const problemsPerPage = 100;
+const submissionsPerPage = 100;
+const historyPerPage = 100;
+
 app.get('/', async function (req, res) {
-    const [ rows, fields ] = await sql.query(`SELECT * FROM problems;`);
+    var page = 1;
+    if (req.query.page !== undefined && parseInt(req.query.page) == req.query.page && req.query.page >= 1) page = parseInt(req.query.page);
+    const cnt = (await sql.query(`SELECT COUNT(1) FROM problems;`))[0][0]['COUNT(1)'];
+    const [ rows, fields ] = await sql.query(`SELECT * FROM problems ORDER BY num LIMIT ${(page - 1) * problemsPerPage}, ${problemsPerPage};`);
     return res.render('main', {
         problems: rows,
-        user: req.session.auth
+        user: req.session.auth,
+        page: page,
+        pages: ~~((cnt + problemsPerPage - 1) / problemsPerPage)
     });
 });
 
@@ -487,26 +496,36 @@ app.get('/submit/:num', async function (req, res) {
 });
 
 app.get('/submissions', async function (req, res) {
-    const [ rows, fields ] = await sql.query(`SELECT cnt, id, user, result, problem, time, memory, submitDate, title FROM submissions LEFT JOIN problems ON submissions.problem = problems.num ORDER BY cnt DESC;`);
+    var page = 1;
+    if (req.query.page !== undefined && parseInt(req.query.page) == req.query.page && req.query.page >= 1) page = parseInt(req.query.page);
+    const cnt = (await sql.query(`SELECT COUNT(1) FROM submissions;`))[0][0]['COUNT(1)'];
+    const [ rows, fields ] = await sql.query(`SELECT cnt, id, user, result, problem, time, memory, submitDate, title FROM submissions LEFT JOIN problems ON submissions.problem = problems.num ORDER BY cnt DESC LIMIT  ${(page - 1) * submissionsPerPage}, ${submissionsPerPage};`);
     return res.render('submissions', {
         submissions: rows,
-        getResult: getResult
+        getResult: getResult,
+        page: page,
+        pages: ~~((cnt + submissionsPerPage - 1) / submissionsPerPage)
     });
 })
 
 app.get('/submissions/:num', async function (req, res) {
+    var page = 1;
+    if (req.query.page !== undefined && parseInt(req.query.page) == req.query.page && req.query.page >= 1) page = parseInt(req.query.page);
     const [ rows, fields ] = await sql.query(`SELECT title FROM problems WHERE num=${mysql.escape(req.params.num)};`);
     if (rows.length <= 0) {
         const [ rows2, fields2 ] = await sql.query(`SELECT href FROM redirections WHERE num = ${mysql.escape(req.params.num)}`);
         if (rows2.length > 0) return res.redirect(`/submissions/${rows2[0].href}`);
         return res.send('Not Found');
     }
-    const [ rows2, fields2 ] = await sql.query(`SELECT cnt, id, user, result, problem, time, memory, submitDate FROM submissions WHERE problem = ${mysql.escape(req.params.num)} ORDER BY cnt DESC LIMIT 20;`);
+    const cnt = (await sql.query(`SELECT COUNT(1) FROM submissions WHERE problem = ${mysql.escape(req.params.num)}`))[0][0]['COUNT(1)'];
+    const [ rows2, fields2 ] = await sql.query(`SELECT cnt, id, user, result, problem, time, memory, submitDate FROM submissions WHERE problem = ${mysql.escape(req.params.num)} ORDER BY cnt DESC LIMIT ${(page - 1) * submissionsPerPage}, ${submissionsPerPage};`);
     return res.render('list', {
         title: rows[0].title,
         num: req.params.num,
         submissions: rows2,
-        getResult: getResult
+        getResult: getResult,
+        page: page,
+        pages: ~~((cnt + submissionsPerPage - 1) / submissionsPerPage)
     });
 });
 
@@ -677,11 +696,16 @@ app.post('/redirections/:num/delete', async function (req, res) {
 });
 
 app.get('/history/:num', async function (req, res) {
-    const [ rows, fields ] = await sql.query(`SELECT cnt, problem, user, type, arg, date FROM histories WHERE problem = ${mysql.escape(req.params.num)} ORDER BY cnt DESC;`);
+    var page = 1;
+    if (req.query.page !== undefined && parseInt(req.query.page) == req.query.page && req.query.page >= 1) page = parseInt(req.query.page);
+    const cnt = (await sql.query(`SELECT COUNT(1) FROM histories WHERE problem = ${mysql.escape(req.params.num)};`))[0][0]['COUNT(1)'];
+    const [ rows, fields ] = await sql.query(`SELECT cnt, problem, user, type, arg, date FROM histories WHERE problem = ${mysql.escape(req.params.num)} ORDER BY cnt DESC LIMIT ${(page - 1) * historyPerPage}, ${historyPerPage};`);
     res.render('history', {
         num: req.params.num,
         history: rows,
-        getHistory: getHistory
+        getHistory: getHistory,
+        page: page,
+        pages: ~~((cnt + submissionsPerPage - 1) / submissionsPerPage)
     });
 });
 

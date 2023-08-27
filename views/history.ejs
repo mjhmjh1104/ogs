@@ -1,83 +1,8 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>OGS</title>
-    <style>
-        .description {
-            white-space: pre-wrap;
-        }
-        iframe {
-            width: 800px;
-            height: 1000px;
-        }
-        *:not(.MJX-TEX *) {
-            font-family: sans-serif;
-            color: #333;
-        }
-        *, p, ul, ol, li {
-            margin: 0;
-            margin-block: 0;
-        }
-        p {
-            line-height: 30px;
-        }
-        li {
-            margin-top: -5px;
-        }
-        table {
-            border-collapse: collapse;
-            width: 100%;
-        }
-        th, td {
-            border: 1px #888 solid;
-            padding: 12px 15px;
-        }
-        .container {
-            margin: 100px auto;
-            width: 850px;
-        }
-        h1, h2, h3, h4, h5, h6 {
-            border-bottom: 1px #ccc solid;
-            margin-bottom: 15px;
-        }
-        code, .code {
-            border: 1px #aaa solid;
-            padding: 5px 10px;
-            background-color: #eee;
-            font-family: 'Menlo', 'Consolas', Arial, sans-serif !important;
-        }
-        code {
-            display: inline-block;
-            line-height: normal;
-        }
-        .code {
-            display: block;
-        }
-        .code * {
-            font-family: 'Menlo', 'Consolas', Arial, sans-serif !important;
-        }
-        .border-none {
-            border-collapse: collapse;
-            border: none;
-        }
-        .border-none td {
-            border: 1px solid black;
-        }
-        .border-none tr:first-child td, .border-none:first-child th {
-            border-top: none;
-        }
-        .border-none tr:last-child td, .border-none:last-child th {
-            border-bottom: none;
-        }
-        .border-none tr td:first-child, .border-none th:first-child {
-            border-left: none;
-        }
-        .border-none tr td:last-child, .border-none th:last-child {
-            border-right: none;
-        }
-    </style>
+    <%- include('head.ejs') %>
 </head>
 <body>
     <div class="container">
@@ -102,6 +27,17 @@
             </tr>
     <% }); %>
         </table>
+        <div class="pages">
+    <% let pageList = [ page ]; %>
+    <% if (1 != page) pageList.push(1); %>
+    <% if (page != pages) pageList.push(pages); %>
+    <% for (var i = 0; page - (1 << i) > 1; i++) pageList.push(page - (1 << i)); %>
+    <% for (var i = 0; page + (1 << i) < pages; i++) pageList.push(page + (1 << i)); %>
+    <% pageList.sort(); %>
+    <% for (var i = 0; i < pageList.length; i++) { %>
+            <a href="/history/<%= num %>?page=<%= pageList[i] %>"><button<% if (pageList[i] == page) { %> class="ok"<% } %>><%= pageList[i] %></button></a>
+    <% } %>
+        </div>
         <a href="/">Main</a>
     </div>
 </body>

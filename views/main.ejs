@@ -32,6 +32,17 @@
             </tr>
     <% }); %>
         </table>
+        <div class="pages">
+    <% let pageList = [ page ]; %>
+    <% if (1 != page) pageList.push(1); %>
+    <% if (page != pages) pageList.push(pages); %>
+    <% for (var i = 0; page - (1 << i) > 1; i++) pageList.push(page - (1 << i)); %>
+    <% for (var i = 0; page + (1 << i) < pages; i++) pageList.push(page + (1 << i)); %>
+    <% pageList.sort(); %>
+    <% for (var i = 0; i < pageList.length; i++) { %>
+            <a href="/?page=<%= pageList[i] %>"><button<% if (pageList[i] == page) { %> class="ok"<% } %>><%= pageList[i] %></button></a>
+    <% } %>
+        </div>
         <input type="text" id="go"><button onclick="window.location.href = '/view/' + $('#go').val();">Go</button>
     </div>
 </body>
