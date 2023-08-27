@@ -136,13 +136,42 @@
         white-space: nowrap;
     }
     .progressYellow {
-        background-color: #ee6 !important;
+        background-color: #eeee55 !important;
+        background: linear-gradient(to right, var(--color1) 0, var(--color2) 100%) !important;
+        transition: --color1 .5s, --color2 .5s, all .5s;
     }
     .progressGreen {
-        background-color: #6e6 !important;
+        background-color: #70ff6a !important;
     }
     .progressRed {
-        background-color: #e66 !important;
+        background-color: #ff7070 !important;
+        --color1: #ff7070;
+        --color2: #ff7070;
+        background: linear-gradient(to right, var(--color1) 0, var(--color2) 100%) !important;
+        transition: --color1 .5s, --color2 .5s, all .5s;
+    }
+    .progressDone {
+        background-color: #70ff6a !important;
+        --color2: #70ff6a;
+        background: linear-gradient(to right, var(--color1) 0, var(--color2) 100%) !important;
+        transition: --color1 .5s, --color2 .5s, all .5s;
+    }
+    @property --color1 {
+        syntax: '<color>';
+        initial-value: #eeee55;
+        inherits: false;
+    }
+    @property --color2 {
+        syntax: '<color>';
+        initial-value: #eeee55;
+        inherits: false;
+    }
+
+    td:has(.progressBar) {
+        border: none;
+    }
+    table {
+        border: 1px #888 solid;
     }
     .onProgressBar {
         color: white;
@@ -162,6 +191,7 @@
     .fileLabel {
         background-color: #4F91FE;
         padding: 5px 20px;
+        margin: 10px 0;
         color: white;
         width: calc(100% - 40px);
         display: block;

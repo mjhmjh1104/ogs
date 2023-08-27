@@ -29,6 +29,7 @@ var gradingSocket = { };
 
 // Queue storing submission IDs
 var queue = [ ];
+var queries = [ ];
 
 var workers = [ ];
 
@@ -1995,6 +1996,10 @@ app.get('/:num', function (req, res) {
     return res.redirect(`/view/${req.params.num}`);
 });
 
+app.get('*', function (req, res) {
+    return res.send('Not Found');
+});
+
 function getResult(x) {
     if (!x) return 'Not Marked';
     if (x == 'WA') return 'Wrong Answer';
@@ -2063,12 +2068,12 @@ const workerNum = 3;
                         const [ rows, fields ] = await sql.query(`SELECT result FROM submissions WHERE id = ${mysql.escape(msg.content.id)};`);
                         if (rows.length > 0 && (rows[0].result !== 'GD' && rows[0].result !== 'RD' && rows[0].result !== 'FD' && rows[0].result !== 'CP')) return;
                     }
-                    await sql.query(`UPDATE submissions SET result = ${mysql.escape(msg.content.result.result)}, marks = ${mysql.escape(msg.content.result.score)} WHERE id = ${mysql.escape(msg.content.id)};`);
+                    queries.push(`UPDATE submissions SET result = ${mysql.escape(msg.content.result.result)}, marks = ${mysql.escape(msg.content.result.score)} WHERE id = ${mysql.escape(msg.content.id)};`);
                     if (msg.content.result.time !== undefined) await sql.query(`UPDATE submissions SET time = ${msg.content.result.time} WHERE id = ${mysql.escape(msg.content.id)};`);
                     if (msg.content.result.walltime !== undefined) await sql.query(`UPDATE submissions SET walltime = ${msg.content.result.walltime} WHERE id = ${mysql.escape(msg.content.id)};`);
                     if (msg.content.result.mem !== undefined) await sql.query(`UPDATE submissions SET memory = ${msg.content.result.mem} WHERE id = ${mysql.escape(msg.content.id)};`);
                     if (msg.content.result.subResult !== undefined) for (var i = 0; i < msg.content.result.subResult.length; i++) {
-                        sql.query(`INSERT INTO subtasks (id, subtask, result, marks, time, walltime, mem) VALUES (${mysql.escape(msg.content.id)}, ${mysql.escape(i + 1)}, ${mysql.escape(msg.content.result.subResult[i])}, ${mysql.escape(msg.content.result.subPoints[i])}, ${mysql.escape(msg.content.result.subTime[i])}, ${mysql.escape(msg.content.result.subWalltime[i])}, ${mysql.escape(msg.content.result.subMem[i])}) ON DUPLICATE KEY UPDATE result = ${mysql.escape(msg.content.result.subResult[i])}, marks = ${mysql.escape(msg.content.result.subPoints[i])}, time = ${mysql.escape(msg.content.result.subTime[i])}, walltime = ${mysql.escape(msg.content.result.subWalltime[i])}, mem = ${mysql.escape(msg.content.result.subMem[i])}`)
+                        queries.push(`INSERT INTO subtasks (id, subtask, result, marks, time, walltime, mem) VALUES (${mysql.escape(msg.content.id)}, ${mysql.escape(i + 1)}, ${mysql.escape(msg.content.result.subResult[i])}, ${mysql.escape(msg.content.result.subPoints[i])}, ${mysql.escape(msg.content.result.subTime[i])}, ${mysql.escape(msg.content.result.subWalltime[i])}, ${mysql.escape(msg.content.result.subMem[i])}) ON DUPLICATE KEY UPDATE result = ${mysql.escape(msg.content.result.subResult[i])}, marks = ${mysql.escape(msg.content.result.subPoints[i])}, time = ${mysql.escape(msg.content.result.subTime[i])}, walltime = ${mysql.escape(msg.content.result.subWalltime[i])}, mem = ${mysql.escape(msg.content.result.subMem[i])}`)
                     }
                     var subProgress = [ ];
                     if (msg.content.result.subDone !== undefined) for (var i = 0; i < msg.content.result.subDone.length; i++) subProgress.push(msg.content.result.subDone[i] / msg.content.result.subTotal[i]);
@@ -2185,9 +2190,13 @@ const workerNum = 3;
         await loadProblems();
         console.log('SQL config done');
 
-        app.get('*', function (req, res) {
-            return res.send('Not Found');
-        });
+        (async function resolveQuerires() {
+            while (queries.length > 0) {
+                await sql.query(queries[0]);
+                queries.shift();
+            }
+            setTimeout(resolveQuerires, 1000);
+        })();
     })();
 })();
 

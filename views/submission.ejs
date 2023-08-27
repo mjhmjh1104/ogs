@@ -7,12 +7,12 @@
 <body>
     <div class="container">
         <h1>Submission #<%= submission.cnt %></h1>
-        <code id="stderr" style="color: red;"><%= log %></code><br>
+        <code id="stderr" style="color: red; width: calc(100% - 22px);"><%= log %></code><br>
     <% for (idx in code) { %>
-        <span><%= idx %></span><br>
+        <span class="fileLabel"><%= idx %></span>
         <code><%= code[idx] %></code><br>
     <% } %>
-        Submitted on <%= submission.submitDate %> by <%= submission.user %><br>
+        <span class="fileLabel">Submitted on <%= submission.submitDate %> by <%= submission.user %></span>
         <table id="table">
             <tr>
                 <th>Subtask</th>
@@ -25,7 +25,7 @@
                 <td>Total</td>
                 <td style="background-color: black; color: white;"><span class="onProgressBar"><div class="time" style="display: inline-block;"><%= submission.time %></div> ms</span><div id="timeBar" class="progressBar <%= (submission.time > subTl[0] ? 'progressRed' : 'progressGreen') %>" style="width: <%= Math.min(submission.time / subTl[0] * 100, 100) %>%;"><span class="inProgressBar"><div class="time" style="display: inline-block;"><%= submission.time %></div> ms</span></div></td>
                 <td style="background-color: black; color: white;"><span class="onProgressBar"><div class="mem" style="display: inline-block;"><%= submission.memory %></div> bytes</span><div id="memBar" class="progressBar <%= (submission.mem > subMl[0] ? 'progressRed' : 'progressGreen') %>" style="width: <%= Math.min(submission.memory / subMl[0] * 100, 100) %>%;"><span class="inProgressBar"><div class="mem" style="display: inline-block;"><%= submission.memory %></div> bytes</span></div></td>
-                <td style="background-color: black;"><span class="result onProgressBar"><%= getResult(submission.result) %></span><div id="prog" class="progressBar <%= (submission.result !== 'AC' && submission.result !== 'GD' ? submission.result === 'PC' ? 'progressYellow' : 'progressRed' : submission.marks >= max ? 'progressGreen' : 'progressYellow') %>" style="width: 100%;"><span class="result inProgressBar"><%= getResult(submission.result) %></span></div></td>
+                <td style="background-color: black;"><span class="result onProgressBar"><%= getResult(submission.result) %></span><div id="prog" class="progressBar <%= (submission.result !== 'AC' && submission.result !== 'GD' ? submission.result === 'PC' ? 'progressYellow' : 'progressRed' : submission.marks >= max ? 'progressDone' : 'progressYellow') %>" style="width: 100%;"><span class="result inProgressBar"><%= getResult(submission.result) %></span></div></td>
                 <td style="background-color: black;"><span class="marks onProgressBar"><%= submission.marks %></span><div id="marksBar" class="progressBar progressGreen" style="width: <%= submission.marks / max * 100 %>%;"><span class="marks inProgressBar"><%= submission.marks %></span></div></td>
             </tr>
 <% subtasks.forEach(function (item) { %>
@@ -33,7 +33,7 @@
                 <td><%= item.subtask %></td>
                 <td style="background-color: black; color: white;"><span class="onProgressBar"><div class="<%= item.subtask %>time" style="display: inline-block;"><%= item.time %></div> ms</span><div id="<%= item.subtask %>timeBar" class="progressBar <%= (item.time > subTl[item.subtask] ? 'progressRed' : 'progressGreen') %>" style="width: <%= Math.min(item.time / subTl[item.subtask] * 100, 100) %>%;"><span class="inProgressBar"><div class="<%= item.subtask %>time" style="display: inline-block;"><%= item.time %></div> ms</span></div></td>
                 <td style="background-color: black; color: white;"><span class="onProgressBar"><div class="<%= item.subtask %>mem" style="display: inline-block;"><%= item.mem %></div> bytes</span><div id="<%= item.subtask %>memBar" class="progressBar <%= (item.mem > subMl[item.subTask] ? 'progressRed' : 'progressGreen') %>" style="width: <%= Math.min(item.mem / subMl[item.subtask] * 100, 100) %>%;"><span class="inProgressBar"><div class="<%= item.subtask %>mem" style="display: inline-block;"><%= item.mem %></div> bytes</span></div></td>
-                <td style="background-color: black;"><span class="<%= item.subtask %>result onProgressBar"><%= getResult(item.result) %></span><div id="<%= item.subtask %>prog" class="progressBar <%= (item.result !== 'AC' && item.result !== 'PC' ? 'progressRed' : item.marks >= item.max ? 'progressGreen' : 'progressYellow') %>" style="width: 100%;"><span class="<%= item.subtask %>result inProgressBar"><%= getResult(item.result) %></span></div></td>
+                <td style="background-color: black;"><span class="<%= item.subtask %>result onProgressBar"><%= getResult(item.result) %></span><div id="<%= item.subtask %>prog" class="progressBar <%= (item.result !== 'AC' && item.result !== 'PC' ? 'progressRed' : item.marks >= item.max ? 'progressDone' : 'progressYellow') %>" style="width: 100%;"><span class="<%= item.subtask %>result inProgressBar"><%= getResult(item.result) %></span></div></td>
                 <td><span class="<%= item.subtask %>marks"><%= item.marks %></span></td>
             </tr>
 <% }); %>
@@ -64,10 +64,12 @@
                         $('#prog').removeClass('progressRed');
                         $('#prog').removeClass('progressGreen');
                         $('#prog').addClass('progressYellow');
+                        $(`#prog`).removeClass('progressDone');
                     } else {
                         $('#prog').removeClass('progressYellow');
                         $('#prog').removeClass('progressGreen');
                         $('#prog').addClass('progressRed');
+                        $(`#prog`).removeClass('progressDone');
                     }
                     $(`#prog`).width('100%');
                 } else {
@@ -75,8 +77,13 @@
                     $('#prog').width((data.progress * 100) + '%');
                     if (data.progress >= 1) {
                         $('#prog').removeClass('progressYellow');
-                        $('#prog').addClass('progressGreen');
-                    } else $('#prog').addClass('progressYellow');
+                        $('#prog').removeClass('progressGreen');
+                        $(`#prog`).addClass('progressDone');
+                    } else {
+                        $('#prog').addClass('progressYellow');
+                        $(`#prog`).removeClass('progressGreen');
+                        $(`#prog`).removeClass('progressDone');
+                    }
                 }
             }
             if (data.time !== undefined) {
@@ -122,20 +129,24 @@
                             $(`#${i + 1}prog`).removeClass('progressGreen');
                             $(`#${i + 1}prog`).removeClass('progressRed');
                             $(`#${i + 1}prog`).addClass('progressYellow');
+                            $(`#${i + 1}prog`).removeClass('progressDone');
                         } else {
                             $(`#${i + 1}prog`).removeClass('progressYellow');
                             $(`#${i + 1}prog`).removeClass('progressGreen');
                             $(`#${i + 1}prog`).addClass('progressRed');
+                            $(`#${i + 1}prog`).removeClass('progressDone');
                         }
                         $(`#${i + 1}prog`).width('100%');
                     } else {
                         $(`#${i + 1}prog`).width((data.subProgress[i] * 100) + '%');
                         if (data.subProgress[i] >= 1) {
                             $(`#${i + 1}prog`).removeClass('progressYellow');
-                            $(`#${i + 1}prog`).addClass('progressGreen');
+                            $(`#${i + 1}prog`).removeClass('progressGreen');
+                            $(`#${i + 1}prog`).addClass('progressDone');
                         } else {
                             $(`#${i + 1}prog`).addClass('progressYellow');
                             $(`#${i + 1}prog`).removeClass('progressGreen');
+                            $(`#${i + 1}prog`).removeClass('progressDone');
                         }
                     }
                     $(`.${i + 1}time`).html(data.subTime[i]);
