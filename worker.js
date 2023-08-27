@@ -163,6 +163,7 @@ async function grade(submission) {
             done: 0
         }, submission.filename, submission.type);
         await exec(`yes | rm -rf grading/isolate/"${data.workerNum}"/*`);
+        await exec(`cp "grading/testlib.h" "grading/isolate/${data.workerNum}/testlib.h"`);
         await exec(`cp "grading/compilers/${submission.lang}.sh" "grading/isolate/${data.workerNum}/compile.sh"`);
         await exec(`cp "grading/compilers/${submission.lang}-run.sh" "grading/isolate/${data.workerNum}/run.sh"`);
         await exec(`cp "grading/checker.sh" "grading/isolate/${data.workerNum}/compile-checker.sh"`);
