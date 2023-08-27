@@ -270,13 +270,14 @@ async function grade(submission) {
                 for (var l = 0; l < subtask.length; l++) if (!grading.subtask[subtask[l]].finished) realCnt++;
                 if (realCnt <= 0) continue;
                 try {
-                    var tmpTl = 0, tmpWl = 0, tmpMl = 0;
+                    var tmpTl = 0, tmpWl = 0, tmpMl = 0, subList = '';
                     for (var l = 0; l < subtask.length; l++) {
                         tmpTl = Math.max(tmpTl, grading.subtask[subtask[l]].tl);
                         tmpWl = Math.max(tmpWl, grading.subtask[subtask[l]].wl);
                         tmpMl = Math.max(tmpMl, grading.subtask[subtask[l]].ml);
+                        subList += ` ${subtask[l] + 1}`;
                     }
-                    const { stdout, stderr } = await isolateExec('/files/run.sh', `--stdin=/files/archive/data/${name}.in --stdout=/files/out --stderr=/files/err`, tmpTl / 1000, tmpWl / 1000, tmpMl, 2, EXEC_LOG);
+                    const { stdout, stderr } = await isolateExec('/files/run.sh', `${subList} --stdin=/files/archive/data/${name}.in --stdout=/files/out --stderr=/files/err`, tmpTl / 1000, tmpWl / 1000, tmpMl, 2, EXEC_LOG);
                 } catch (e) { console.log(e); }
                 const status = await getLog(EXEC_LOG, 'status');
                 const time = parseFloat(await getLog(EXEC_LOG, 'time')) * 1000;

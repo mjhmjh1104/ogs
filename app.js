@@ -1633,7 +1633,7 @@ app.post('/data/:num/add', async function (req, res) {
         data.splice(req.body.pidx, 1);
     }
     try {
-        await fs.rmdir(`archive/${req.params.num}/data/tmp`, {
+        await fs.rm(`archive/${req.params.num}/data/tmp`, {
             recursive: true,
             force: true
         });
@@ -1700,7 +1700,7 @@ app.post('/data/:num/add', async function (req, res) {
         data: nameList
     });
     await fs.writeFile(`archive/${req.params.num}/data.json`, JSON.stringify(data));
-    await fs.rmdir(`archive/${req.params.num}/data/tmp`, {
+    await fs.rm(`archive/${req.params.num}/data/tmp`, {
         recursive: true,
         force: true
     });
