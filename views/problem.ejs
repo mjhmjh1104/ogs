@@ -52,8 +52,13 @@
     <% contents.forEach(function (item, idx) { %>
     <% if (item.type === 'md') { %>
         <div class="description desc<%= idx %>" <% if (idx != 0) { %>style="display: none;"<% } %>><div class="marked"><%- item.content %></div></div>
-    <% } else { %>
+    <% } else if (item.type === 'pdf') { %>
         <iframe class="description desc<%= idx %>" src="/view/<%= num %>/providing/<%= item.content %>" title="<%= item.name %>" <% if (idx != 0) { %>style="display: none;"<% } %>></iframe>
+    <% if (item.provide && item.provide.length > 0) { %>
+        <div class="marked">## Provided<% item.provide.forEach(function (item) { %>
+
+[<%= item %>](providing/<%= item %>)<% }); %></div>
+    <% } %>
     <% } %>
     <% }); %>
         <br>

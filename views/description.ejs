@@ -30,6 +30,16 @@
                     <option value="<%= item %>" <% if ((!data.pdf && idx == 0) || (data.pdf === item)) { %>selected<% } %>><%= item %></option>
         <% }); %>
                 </select>
+                <div class="list" id="provideList">
+<% if (provide) provide.forEach(function (item, idx) { %>
+                <div class="listEle" id="<%= idx %>provideListEle"><input type="hidden" name="<%= idx %>provide" value="<%= item %>"><input type="hidden" name="<%= idx %>provideEnabled" id="<%= idx %>provideEnabled" value="true"><%= item %><span class="cross" onclick="$('#<%= idx %>provideListEle').hide();$('#<%= idx %>provideEnabled').val('false');">×</span></div>
+<% }); %>
+                </div>
+                <select id="providings">
+    <% providing.forEach(function (item, idx) { %>
+                    <option value="<%= item %>"><%= item %></option>
+    <% }); %>
+                </select><button type="button" onclick="add();">Add</button>
                 <button type="submit">Submit</button>
             </div>
         </form>
@@ -62,6 +72,13 @@
                 $('#preview div').html($('#hidden').html());
             }, 200);
         }, 1000);
+
+        function add() {
+            const val = $('#providings').val();
+            $('#providings').val('');
+            var len = $('#provideList .listEle').length;
+            $('#provideList').append(`<div class="listEle" id="${len}provideListEle"><input type="hidden" name="${len}provide" value="${val}"><input type="hidden" name="${len}provideEnabled" id="${len}provideEnabled" value="true">${val}<span class="cross" onclick="$('#${len}provideListEle').hide();$('#${len}provideEnabled').val('false');">×</span></div>`);
+        }
     </script>
     <script>
         $('.marked').each(function () {

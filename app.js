@@ -334,7 +334,8 @@ app.get('/view/:num', async function (req, res) {
                 type: obj.type,
                 lang: obj.lang,
                 name: obj.name,
-                title: info.title
+                title: info.title,
+                provide: obj.provide
             });
         }
     }
@@ -396,7 +397,6 @@ app.post('/add/:num', async function (req, res) {
             title: req.body.title
         });
         await exec(`mkdir "archive/${req.params.num}"`);
-        await exec(`touch "archive/${req.params.num}/description.md"`);
         await fs.writeFile(`archive/${req.params.num}/info.json`, JSON.stringify({
             title: req.body.title,
             providing: [ ]
@@ -774,7 +774,8 @@ app.get('/description/:num/add', async function (req, res) {
         error: '',
         data: { },
         num: req.params.num,
-        providing: info.providing
+        providing: info.providing,
+        provide: []
     });
 });
 
@@ -812,7 +813,8 @@ app.get('/description/:num/edit/:idx', async function (req, res) {
             file: info.versions[req.params.idx].filename
         },
         num: req.params.num,
-        providing: info.providing
+        providing: info.providing,
+        provide: []
     });
     else if (info.versions[req.params.idx].type === 'pdf') res.render('description', {
         error: '',
@@ -825,7 +827,8 @@ app.get('/description/:num/edit/:idx', async function (req, res) {
             pdf: info.versions[req.params.idx].path
         },
         num: req.params.num,
-        providing: info.providing
+        providing: info.providing,
+        provide: info.versions[req.params.idx].provide
     });
 });
 
@@ -927,36 +930,46 @@ app.post('/description/:num/add', async function (req, res) {
     try {
         info = JSON.parse(await fs.readFile(`archive/${req.params.num}/info.json`));
     } catch (e) { }
+    var provide = [ ];
+    for (var i = 0; ; i++) {
+        if (!req.body[`${i}provide`]) break;
+        if (req.body[`${i}provideEnabled`] === 'true') provide.push(req.body[`${i}provide`]);
+    }
     if (!req.session.auth) return res.render('description', {
         error: 'Not signed in',
         data: req.body,
         num: req.params.num,
-        providing: info.providing
+        providing: info.providing,
+        provide: provide
     });
     if (!req.session.auth.admin) return res.render('description', {
         error: 'No permission',
         data: req.body,
         num: req.params.num,
-        providing: info.providing
+        providing: info.providing,
+        provide: provide
     });
     const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
     if (rows[0]['COUNT(1)'] <= 0) return res.render('description', {
         error: 'Problem moved or deleted',
         data: req.body,
         num: req.params.num,
-        providing: info.providing
+        providing: info.providing,
+        provide: provide
     });
     if (!req.body.desc) return res.render('description', {
         error: 'Name empty',
         data: req.body,
         num: req.params.num,
-        providing: info.providing
+        providing: info.providing,
+        provide: provide
     });
     if (!req.body.lang) return res.render('description', {
         error: 'Lang empty',
         data: req.body,
         num: req.params.num,
-        providing: info.providing
+        providing: info.providing,
+        provide: provide
     });
     if (req.body.edit === 'true') {
         const idx = parseInt(req.body.pidx);
@@ -964,7 +977,8 @@ app.post('/description/:num/add', async function (req, res) {
             error: 'Invalid index',
             data: req.body,
             num: req.params.num,
-            providing: info.providing
+            providing: info.providing,
+            provide: provide
         });
     }
     const oldVers = (info.versions ? info.versions : []).slice();
@@ -973,13 +987,15 @@ app.post('/description/:num/add', async function (req, res) {
             error: 'Filename prohibited',
             data: req.body,
             num: req.params.num,
-            providing: info.providing
+            providing: info.providing,
+            provide: provide
         });
         if (!req.body.file) return res.render('description', {
             error: 'Filename empty',
             data: req.body,
             num: req.params.num,
-            providing: info.providing
+            providing: info.providing,
+            provide: provide
         });
         var l = -1;
         if (info.versions) for (var i = 0; i < info.versions.length; i++) if (info.versions[i].type === 'md' && info.versions[i].filename === req.body.file) l = i;
@@ -987,7 +1003,8 @@ app.post('/description/:num/add', async function (req, res) {
             error: 'Filename already exists',
             data: req.body,
             num: req.params.num,
-            providing: info.providing
+            providing: info.providing,
+            provide: provide
         });
         var oldDesc = '';
         var k = -1;
@@ -996,7 +1013,8 @@ app.post('/description/:num/add', async function (req, res) {
             error: 'Name already exists',
             data: req.body,
             num: req.params.num,
-            providing: info.providing
+            providing: info.providing,
+            provide: provide
         });
         if (req.body.edit === 'true') {
             if (info.versions[parseInt(req.body.pidx)].type === 'md') {
@@ -1037,7 +1055,8 @@ app.post('/description/:num/add', async function (req, res) {
             error: 'Name already exists',
             data: req.body,
             num: req.params.num,
-            providing: info.providing
+            providing: info.providing,
+            provide: provide
         });
         if (req.body.edit === 'true') {
             if (info.versions[parseInt(req.body.pidx)].type === 'md') await fs.unlink(`archive/${req.params.num}/descriptions/${info.versions[parseInt(req.body.pidx)].filename}`);
@@ -1048,7 +1067,8 @@ app.post('/description/:num/add', async function (req, res) {
             type: req.body.type,
             lang: req.body.lang,
             path: req.body.pdf,
-            name: req.body.desc
+            name: req.body.desc,
+            provide: provide
         });
         await fs.writeFile(`archive/${req.params.num}/info.json`, JSON.stringify(info));
         await addHistory(req.params.num, req.session.auth.user, req.body.edit !== 'true' ? 'CRTDSC' : 'EDTDSC', req.body.desc, {
@@ -1068,7 +1088,8 @@ app.post('/description/:num/add', async function (req, res) {
         error: 'Choose description type',
         data: req.body,
         num: req.params.num,
-        providing: info.providing
+        providing: info.providing,
+        provide: provide
     });
 });
 
