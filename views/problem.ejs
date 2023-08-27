@@ -33,14 +33,14 @@
             <tr>
                 <td># submissions</td>
                 <td># acceptions</td>
-                <% if (info.tl !== undefined) { %><td>Time Limit</td><% } %>
-                <% if (info.ml !== undefined) { %><td>Memory Limit</td><% } %>
+                <% if (tl !== Infinity) { %><td>Time Limit</td><% } %>
+                <% if (ml !== Infinity) { %><td>Memory Limit</td><% } %>
             </tr>
             <tr>
                 <td><%= infoSql.submitCnt %></td>
                 <td><%= infoSql.correctCnt %></td>
-                <% if (info.tl !== undefined) { %><td><%= info.tl / 1000 %> second<% if (info.tl != 1000) { %>s<% } %></td><% } %>
-                <% if (info.ml !== undefined) { %><td><%= info.ml / 1000000 %> MiB</td><% } %>
+                <% if (tl !== Infinity) { %><td><%= tl / 1000 %> second<% if (tl != 1000) { %>s<% } %></td><% } %>
+                <% if (ml !== Infinity) { %><td><%= ml / 1000000 %> MiB</td><% } %>
             </tr>
         </table>
         <% if (redr) { %><p>Redirected to <a href="/view/<%= num %>"><%= info.title %></a></p><% } %>

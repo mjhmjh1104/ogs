@@ -338,6 +338,11 @@ app.get('/view/:num', async function (req, res) {
             });
         }
     }
+    var tl = Infinity, ml = Infinity;
+    if (grading.subtask) for (var i = 0; i < grading.subtask.length; i++) {
+        tl = Math.min(tl, grading.subtask[i].tl);
+        ml = Math.min(ml, grading.subtask[i].ml);
+    }
     return res.render('problem', {
         redr: redr,
         num: num,
@@ -345,7 +350,9 @@ app.get('/view/:num', async function (req, res) {
         infoSql: rows[0],
         contents: contents,
         user: req.session.auth,
-        gradable: grading.gradable
+        gradable: grading.gradable,
+        tl: tl,
+        ml: ml
     });
 });
 
