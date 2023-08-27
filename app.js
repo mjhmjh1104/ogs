@@ -26,6 +26,7 @@ var socketList = { };
 var idSockets = { };
 var checkerSocket = { };
 var gradingSocket = { };
+var testSocket = { };
 
 // Queue storing submission IDs
 var queue = [ ];
@@ -487,11 +488,13 @@ app.get('/submit/:num', async function (req, res) {
         error: '',
         stderr: '',
         message: '',
-        code: '',
         num: req.params.num,
         title: rows[0].title,
         user: req.session.auth,
-        grading: grading
+        grading: grading,
+        data: {
+            id: genID()
+        }
     });
 });
 
@@ -563,21 +566,42 @@ app.post('/submit/:num', async function (req, res) {
         if (req.files && req.files[`upload-${submittings[i]}`]) await upload(req.files[`upload-${submittings[i]}`], `grading/submissions/${id}-${submittings[i]}`);
         else await fs.writeFile(`grading/submissions/${id}-${submittings[i]}`, req.body[`code-${submittings[i]}`].replace(/\r/g, ''));
     }
-    queue.push({
-        type: 'execute',
-        filename: id,
-        time: Date.now(),
-        user: req.session.auth.user,
-        problem: req.params.num,
-        grading: grading,
-        lang: req.body.lang,
-        args: args,
-        submittings: submittings
-    });
-    await sql.query(`INSERT INTO submissions (id, user, problem, lang) VALUES (${mysql.escape(id)}, ${mysql.escape(req.session.auth.user)}, ${mysql.escape(req.params.num)}, ${mysql.escape(req.body.lang)})`);
-    await sql.query(`UPDATE problems SET submitCnt = submitCnt + 1 WHERE num = ${mysql.escape(req.params.num)};`);
-    tryGrading();
-    res.redirect(`/detail/${id}`);
+    if (grading.languages[k].test && req.body.force !== 'true') {
+        if (testSocket[req.body.id] === undefined) testSocket[req.body.id] = { };
+        testSocket[req.body.id].to = id;
+        queue.push({
+            type: 'test',
+            filename: id,
+            time: Date.now(),
+            user: req.session.auth.user,
+            problem: req.params.num,
+            grading: grading,
+            lang: req.body.lang,
+            args: args,
+            submittings: submittings
+        });
+        tryGrading();
+        return res.json({
+            type: 'done',
+            message: 'Compiling...'
+        });
+    } else {
+        queue.push({
+            type: 'execute',
+            filename: id,
+            time: Date.now(),
+            user: req.session.auth.user,
+            problem: req.params.num,
+            grading: grading,
+            lang: req.body.lang,
+            args: args,
+            submittings: submittings
+        });
+        await sql.query(`INSERT INTO submissions (id, user, problem, lang) VALUES (${mysql.escape(id)}, ${mysql.escape(req.session.auth.user)}, ${mysql.escape(req.params.num)}, ${mysql.escape(req.body.lang)})`);
+        await sql.query(`UPDATE problems SET submitCnt = submitCnt + 1 WHERE num = ${mysql.escape(req.params.num)};`);
+        tryGrading();
+        res.redirect(`/detail/${id}`);
+    }
 });
 
 app.get('/checkers', async function (req, res) {
@@ -1633,7 +1657,7 @@ app.post('/data/:num/add', async function (req, res) {
         data.splice(req.body.pidx, 1);
     }
     try {
-        await fs.rm(`archive/${req.params.num}/data/tmp`, {
+        await fs.rmdir(`archive/${req.params.num}/data/tmp`, {
             recursive: true,
             force: true
         });
@@ -1700,7 +1724,7 @@ app.post('/data/:num/add', async function (req, res) {
         data: nameList
     });
     await fs.writeFile(`archive/${req.params.num}/data.json`, JSON.stringify(data));
-    await fs.rm(`archive/${req.params.num}/data/tmp`, {
+    await fs.rmdir(`archive/${req.params.num}/data/tmp`, {
         recursive: true,
         force: true
     });
@@ -2095,10 +2119,6 @@ const workerNum = 3;
                         const [ rows, fields ] = await sql.query(`SELECT result FROM submissions WHERE id = ${mysql.escape(msg.content.id)};`);
                         if (rows.length > 0 && rows[0].result !== 'AC') await sql.query(`UPDATE problems SET correctCnt = correctCnt + 1 WHERE num = ${mysql.escape(msg.content.problem)};`);
                     }
-                    if (msg.content.result.result == 'GD') {
-                        const [ rows, fields ] = await sql.query(`SELECT result FROM submissions WHERE id = ${mysql.escape(msg.content.id)};`);
-                        if (rows.length > 0 && (rows[0].result !== 'GD' && rows[0].result !== 'RD' && rows[0].result !== 'FD' && rows[0].result !== 'CP')) return;
-                    }
                     queries.push(`UPDATE submissions SET result = ${mysql.escape(msg.content.result.result)}, marks = ${mysql.escape(msg.content.result.score)} WHERE id = ${mysql.escape(msg.content.id)};`);
                     if (msg.content.result.time !== undefined) await sql.query(`UPDATE submissions SET time = ${msg.content.result.time} WHERE id = ${mysql.escape(msg.content.id)};`);
                     if (msg.content.result.walltime !== undefined) await sql.query(`UPDATE submissions SET walltime = ${msg.content.result.walltime} WHERE id = ${mysql.escape(msg.content.id)};`);
@@ -2195,6 +2215,19 @@ const workerNum = 3;
                     if (gradingSocket[msg.content.id]) io.to(gradingSocket[msg.content.id]).emit('updt', {
                         result: msg.content.result
                     });
+                } else if (msg.content.type === 'test') {
+                    var k = -1;
+                    for (idx in testSocket) if (testSocket[idx].to === msg.content.id) k = idx;
+                    if (k == -1) return;
+                    for (var i = 0; i < msg.content.submittings.length; i++) {
+                        try {
+                            await fs.unlink(`grading/submissions/${msg.content.id}-${msg.content.submittings[i]}`);
+                        } catch (e) { }
+                    }
+                    io.to(testSocket[k].id).emit('updt', {
+                        result: msg.content.result
+                    });
+                    delete testSocket[k];
                 }
             }
         });
@@ -2414,6 +2447,7 @@ function erase(x) {
         }
         if (socketList[x].type === 'checker') delete checkerSocket[socketList[x].id];
         if (socketList[x].type === 'grading') delete gradingSocket[socketList[x].id];
+        if (socketList[x].type === 'test') delete testSocket[socketList[x].id];
     }
     delete socketList[x].id;
 }
@@ -2450,6 +2484,12 @@ io.on('connection', function (socket) {
             socketList[socket.id].id = data.id;
             socketList[socket.id].type = data.type;
             gradingSocket[data.id] = socket.id;
+        } else if (data.type === 'test') {
+            if (socketList[socket.id].id) return;
+            socketList[socket.id].id = data.id;
+            socketList[socket.id].type = data.type;
+            if (testSocket[data.id] === undefined) testSocket[data.id] = { };
+            testSocket[data.id].id = socket.id;
         }
     });
     socket.emit('hello');

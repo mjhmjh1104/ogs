@@ -8,26 +8,27 @@
     <div class="container">
         <h1><%= title %></h1>
         <form method="POST" action="/submit/<%= num %>" accept-charset="utf-8" id="submit" enctype="multipart/form-data" style="width: 100%;">
+            <input name="id" type="hidden" value="<%= data.id %>">
+            <input name="force" type="hidden" value="false">
             Language <select name="lang" id="lang" onchange="change();">
 <% grading.languages.forEach(function (item) { %>
                 <option value="<%= item.lang %>"><%= item.langName %></option>
 <% }); %>
             </select>
-    <% if (error) { %><span style="color: red;"><%= error %></span><% } %>
-    <% if (stderr) { %><code style="color: red;"><%= stderr %></code><% } %>
-    <% if (message) { %><span style="color: blue;"><%= error %></span><% } %>
+            <span id="error" style="color: red;"><%= error %></span>
+            <code id="stderr" style="color: red; width: calc(100% - 22px);"><%= stderr %></code>
+            <span id="message" style="color: blue;"><%= message %></span>
             <div id="submittings">
             </div>
         </form>
-        <form method="POST" action="/submit/<%= num %>/retry" accept-charset="utf-8" id="retry"></form><br>
-    <% if (error) { %>
-            <button type="submit" form="submit" class="ok">Submit</button>
-            <button type="submit" form="retry">Edit</button>
-    <% } else { %>
-            <button type="submit" form="submit" class="ok">Submit</button>
-    <% } %>
+        <div id="buttons">
+    <% grading.languages.forEach(function (item) { %>
+        <% if (item.test) { %><button type="button" class="ok" onclick="compile_submit();">Compile and submit</button><% } else { %><button type="submit" form="submit" class="ok">Submit</button><% } %>
+    <% }); %></div>
         <a href="/view/<%= num %>"><button type="button">Back</button></a>
         <script>
+            var socket = io();
+
             function change() {
                 var val = $('#lang').val();
                 var submittings = $('#submittings');
@@ -41,6 +42,93 @@
 <% }); %>
             }
             change();
+
+            function compile_submit() {
+                $('button').attr('disabled', true);
+                $('#submit input, #submit textarea').attr('readonly', true);
+                socket.emit('id', {
+                    id: $('#submit input[name=id]').val(),
+                    type: 'test'
+                });
+                var formData = new FormData ();
+                $('#submit').serializeArray().forEach(function (item) {
+                    formData.append(item.name, item.value);
+                });
+                $('input[type=file]').each(function () {
+                    var name = $(this).attr('name');
+                    Array.from($(this).prop('files')).forEach(function (item) {
+                        formData.append(name, item);
+                    });
+                });
+                $.ajax({
+                    url: '/submit/<%= num %>',
+                    data: formData,
+                    type: 'POST',
+                    contentType: false,
+                    processData: false,
+                    success: function (data) {
+                        if (data.type === 'redirect') window.location.href = data.url;
+                        if (data.type === 'done') {
+                            $('#error').html('');
+                            $('#stderr').html('');
+                            $('#message').html(data.message);
+                        }
+                        if (data.type === 'error') {
+                            $('#error').html(data.error);
+                            $('#message').html('');
+                            $('button').attr('disabled', false);
+                            $('#submit input, #submit textarea').attr('readonly', false);
+                        }
+                    }
+                });
+            }
+
+            var tmpHtml = '';
+
+            function force_submit() {
+                $('button').attr('disabled', false);
+                $('#submit input, #submit textarea').attr('readonly', false);
+                $('input[name=force]').val('true');
+                $('#submit').submit();
+            }
+
+            socket.on('updt', function (data) {
+                console.log(data);
+                if (data.result.result === 'AC') {
+                    force_submit();
+                    return;
+                } else if (data.result.result === 'CE') {
+                    $('#error').html('Compilation failed. Submit anyway?');
+                    $('#stderr').html(data.result.log);
+                    $('#message').html('');
+                } else if (data.result.result === 'TL') {
+                    $('#error').html(`Time limit exceeded at example ${data.result.data + 1}. Submit anyway?`);
+                    $('#message').html('');
+                } else if (data.result.result === 'WL') {
+                    $('#error').html(`Wall clock limit exceeded at example ${data.result.data + 1}. Submit anyway?`);
+                    $('#message').html('');
+                } else if (data.result.result === 'ML') {
+                    $('#error').html(`Memory limit exceeded at example ${data.result.data + 1}. Submit anyway?`);
+                    $('#message').html('');
+                } else if (data.result.result === 'WA') {
+                    $('#error').html(`Wrong answer at example ${data.result.data + 1}. Submit anyway?`);
+                    $('#message').html('');
+                } else if (data.result.result === 'PC') {
+                    $('#error').html(`Partially correct at example ${data.result.data + 1}. Submit anyway?`);
+                    $('#message').html('');
+                } else {
+                    $('#error').html('Failed. Submit anyway?');
+                    $('#message').html('');
+                }
+                $('button').attr('disabled', false);
+                tmpHtml = $('#buttons').html();
+                $('#buttons').html(`<button type="button" onclick="force_submit();">Submit anyway</button><button type="button" class="ok" onclick="retry();">Edit</button>`);
+            });
+            function retry() {
+                $('#buttons').html(tmpHtml);
+                tmpHtml = '';
+                $('#submit input, #submit textarea').attr('readonly', false);
+            }
         </script>
     </div>
 </body>

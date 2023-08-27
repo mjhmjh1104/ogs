@@ -107,6 +107,19 @@ parentPort.on('message', async function (msg) {
                     problem: msg.content.problem
                 }
             });
+        } else if (msg.content.type === 'test') {
+            const res = await test(msg.content);
+            parentPort.postMessage({
+                workerNum: data.workerNum,
+                data: 'updt',
+                content: {
+                    type: msg.content.type,
+                    id: msg.content.filename,
+                    result: res,
+                    problem: msg.content.problem,
+                    submittings: msg.content.submittings
+                }
+            });
         }
         parentPort.postMessage({
             workerNum: data.workerNum,
@@ -142,6 +155,123 @@ function getScore(pts, grading, subTotal, subSofar) {
     return score;
 }
 
+async function test(submission) {
+    const COMPILE_CHECKER_LOG = `grading/isolate/${data.workerNum}/compile_checker.log`;
+    const COMPILE_LOG = `grading/isolate/${data.workerNum}/compile.log`;
+    const EXEC_LOG = `grading/isolate/${data.workerNum}/exec.log`;
+    const CHECK_LOG = `grading/isolate/${data.workerNum}/check.log`;
+    var grading = submission.grading;
+    try {
+        await exec(`yes | rm -rf grading/isolate/"${data.workerNum}"/*`);
+        await exec(`cp "grading/testlib.h" "grading/isolate/${data.workerNum}/testlib.h"`);
+        await exec(`cp "grading/compilers/${submission.lang}.sh" "grading/isolate/${data.workerNum}/compile.sh"`);
+        await exec(`cp "grading/compilers/${submission.lang}-run.sh" "grading/isolate/${data.workerNum}/run.sh"`);
+        for (var i = 0; i < submission.submittings.length; i++) await exec(`cp "grading/submissions/${submission.filename}-${submission.submittings[i]}" "grading/isolate/${data.workerNum}/${submission.submittings[i]}"`);
+        for (var i = grading.subtask.length - 1; i < grading.subtask.length; i++) await exec(`cp "archive/${submission.problem}/checkers/checker${i}" "grading/isolate/${data.workerNum}/checker${i}"`);
+        try {
+            await isolateExec('/files/compile.sh', `${submission.args} --stderr=/files/compile.out`, 10, 21, 512 * 1024 * 1024, 1000, COMPILE_LOG);
+        } catch (e) {
+            var cpMessage = (await fs.readFile(`grading/isolate/${data.workerNum}/compile.out`)).toString();
+            await exec(`cp "grading/isolate/${data.workerNum}/compile.out" "grading/messages/${submission.filename}"`);
+            const status = await getLog(COMPILE_LOG, 'status');
+            if (status == 'TO') return {
+                result: 'CL',
+                log: cpMessage
+            };
+            if (status == 'SG') return {
+                result: 'CR',
+                log: cpMessage
+            };
+            if (status == 'XX') return {
+                result: 'FL',
+                log: cpMessage
+            };
+            return {
+                result: 'CE',
+                log: cpMessage
+            };
+        }
+        var cpMessage = (await fs.readFile(`grading/isolate/${data.workerNum}/compile.out`)).toString();
+        await exec(`cp "grading/isolate/${data.workerNum}/compile.out" "grading/messages/${submission.filename}"`);
+        await mkdir(`grading/isolate/${data.workerNum}/archive/data`);
+        var examples = [ ];
+        try {
+            examples = JSON.parse(await fs.readFile(`archive/${submission.problem}/examples.json`));
+        } catch (e) { }
+        var dataFiles = [ ];
+        for (var i = 0; i < examples.length; i++) if (examples[i].enabled) {
+            await fs.writeFile(`grading/isolate/${data.workerNum}/archive/data/${i}.in`, examples[i].input);
+            await fs.writeFile(`grading/isolate/${data.workerNum}/archive/data/${i}.out`, examples[i].output);
+            dataFiles.push(i);
+        }
+        for (var j = 0; j < dataFiles.length; j++) {
+            const name = dataFiles[j];
+            var tmpTl = grading.subtask[grading.subtask.length - 1].tl, tmpWl = grading.subtask[grading.subtask.length - 1].wl, tmpMl = grading.subtask[grading.subtask.length - 1].ml, subList = `${grading.subtask.length}`;
+            try {
+                const { stdout, stderr } = await isolateExec('/files/run.sh', `${subList} --stdin=/files/archive/data/${name}.in --stdout=/files/out --stderr=/files/err`, tmpTl / 1000, tmpWl / 1000, tmpMl, 2, EXEC_LOG);
+            } catch (e) { console.log(e); }
+            const status = await getLog(EXEC_LOG, 'status');
+            const time = parseFloat(await getLog(EXEC_LOG, 'time')) * 1000;
+            const walltime = parseFloat(await getLog(EXEC_LOG, 'time-wall')) * 1000;
+            const mem = parseFloat(await getLog(EXEC_LOG, 'cg-mem')) * 1024;
+            if (time > tmpTl) return {
+                result: 'TL',
+                data: name
+            };
+            if (walltime > tmpWl) return {
+                result: 'WL',
+                data: name
+            };
+            if (mem > tmpMl) return {
+                result: 'ML',
+                data: name
+            };
+            if (status == 'XX') return {
+                result: 'FL',
+                data: name
+            };
+            if (status == 'RE') return {
+                result: 'RE',
+                data: name
+            };
+            if (status == 'SG') return {
+                result: 'SD',
+                data: name
+            };
+            if (status == 'TO') return {
+                result: 'TL',
+                data: name
+            };
+            if (parseInt(await getLog(EXEC_LOG, 'killed')) == 1) return {
+                result: 'SD',
+                data: name
+            };
+            try {
+                var res = await isolateExec(`/files/checker${grading.subtask.length - 1}`, `"/files/archive/data/${name}.in" "/files/archive/data/${name}.out" "/files/out"`, 10, 21, 4 * 1024 * 1024 * 1024, 1000, CHECK_LOG);
+                res.stderr = res.stderr.substr(0, 2);
+                console.log(res.stderr);
+                if (res.stderr !== 'AC') return {
+                    result: res.stderr,
+                    data: name
+                };
+            } catch (e) {
+                return {
+                    result: 'CD',
+                    data: name
+                };
+            }
+        }
+    } catch (e) {
+        console.log(e);
+        return {
+            result: 'FL'
+        };
+    }
+    return {
+        result: 'AC'
+    };
+}
+
 async function grade(submission) {
     const COMPILE_CHECKER_LOG = `grading/isolate/${data.workerNum}/compile_checker.log`;
     const COMPILE_LOG = `grading/isolate/${data.workerNum}/compile.log`;
@@ -166,26 +296,12 @@ async function grade(submission) {
         await exec(`cp "grading/testlib.h" "grading/isolate/${data.workerNum}/testlib.h"`);
         await exec(`cp "grading/compilers/${submission.lang}.sh" "grading/isolate/${data.workerNum}/compile.sh"`);
         await exec(`cp "grading/compilers/${submission.lang}-run.sh" "grading/isolate/${data.workerNum}/run.sh"`);
-        await exec(`cp "grading/checker.sh" "grading/isolate/${data.workerNum}/compile-checker.sh"`);
         for (var i = 0; i < submission.submittings.length; i++) await exec(`cp "grading/submissions/${submission.filename}-${submission.submittings[i]}" "grading/isolate/${data.workerNum}/${submission.submittings[i]}"`);
-        for (var i = 0; i < grading.subtask.length; i++) {
-            const checker = grading.subtask[i].checker;
-            var path = '';
-            if ([...checker.matchAll('^checkers/')].length > 0) path = `grading/checkers/${checker.substr(9)}.cpp`;
-            if ([...checker.matchAll('^helper/')].length > 0) path = `archive/${submission.problem}/helper/${checker.substr(7)}`;
-            await exec(`cp "${path}" "grading/isolate/${data.workerNum}/checker${i}.cpp"`);
-        }
+        for (var i = 0; i < grading.subtask.length; i++) await exec(`cp "archive/${submission.problem}/checkers/checker${i}" "grading/isolate/${data.workerNum}/checker${i}"`);
         tmpResult({
             result: 'CP',
             done: 0
         }, submission.filename, submission.type);
-        try {
-            for (var i = 0; i < grading.subtask.length; i++) await isolateExec('/files/compile-checker.sh', `/files/checker${i} /files/checker${i}.cpp`, 10, 21, 4 * 1024 * 1024 * 1024, 1000, COMPILE_CHECKER_LOG);
-        } catch (e) {
-            return {
-                result: 'FL'
-            };
-        }
         try {
             await isolateExec('/files/compile.sh', `${submission.args} --stderr=/files/compile.out`, 10, 21, 512 * 1024 * 1024, 1000, COMPILE_LOG);
         } catch (e) {
@@ -482,6 +598,7 @@ async function grade(submission) {
                     try {
                         var res = await isolateExec(`/files/checker${num}`, `"/files/archive/data/${name}.in" "/files/archive/data/${name}.out" "/files/out"`, 10, 21, 4 * 1024 * 1024 * 1024, 1000, CHECK_LOG);
                         res.stderr = res.stderr.substr(0, 2);
+                        console.log(res.stderr);
                         if (res.stderr === 'WA') {
                             r[num] = 'WA';
                             pts[num] = 0;
@@ -658,6 +775,8 @@ async function grading(submission) {
     const EXEC_LOG = `grading/isolate/${data.workerNum}/exec.log`;
     var r = 'AC';
     try {
+        await mkdir(`archive/${submission.problem}/checkersTmp`);
+        await exec(`yes | rm -rf archive/"${submission.problem}"/checkersTmp/*`);
         for (var idx = 0; idx < submission.files.checkers.length; idx++) {
             const checker = submission.files.checkers[idx];
             await exec(`yes | rm -rf grading/isolate/"${data.workerNum}"/*`);
@@ -678,6 +797,7 @@ async function grading(submission) {
                 result: 'CA',
                 subtask: idx + 1
             }, submission.id, submission.type);
+            await exec(`cp "grading/isolate/${data.workerNum}/checker" "archive/${submission.problem}/checkersTmp/checker${idx}"`);
         }
         for (var idx = 0; idx < submission.files.validators.length; idx++) {
             const { validator, dataset, subtask } = submission.files.validators[idx];
@@ -757,6 +877,14 @@ async function grading(submission) {
                 }
             }
         }
+        await mkdir(`archive/${submission.problem}/checkers`);
+        await exec(`yes | rm -rf archive/"${submission.problem}"/checkers/*`);
+        for (var idx = 0; idx < submission.files.checkers.length; idx++) {
+            await exec(`cp "archive/${submission.problem}/checkersTmp/checker${idx}" "archive/${submission.problem}/checkers/checker${idx}"`);
+        }
+        await fs.rmdir(`archive/${submission.problem}/checkersTmp`, {
+            recursive: true
+        });
     } catch (e) {
         console.log(e);
         return {
