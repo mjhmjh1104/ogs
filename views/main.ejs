@@ -17,25 +17,25 @@
         <a href="/submissions"><button type="button">Submissions</button></a><br>
     <% if (user && user.admin) { %><p>You are admin <a href="/checkers">Checkers</a> <a href="/redirections">Redirections</a> <a href="/languages">Languages</a><br></p><% } %>
         <table>
-            <tr>
-                <td>#</td>
-                <td>Title</td>
-                <td># Submissions</td>
-                <td># Acceptions</td>
-            </tr>
+            <tr><td style="padding: 0;"><table class="border-none">
+                <td width="30%">#</td>
+                <td width="30%">Title</td>
+                <td width="20%"># Submissions</td>
+                <td width="20%"># Acceptions</td>
+            </table></td></tr>
     <% problems.forEach(function (item) { %>
-            <tr>
-                <td><%= item.num %></td>
-                <td><a href="/view/<%= item.num %>"><%= item.title %></a></td>
-                <td><%= item.submitCnt %></td>
-                <td><%= item.correctCnt %></td>
-            </tr>
+            <tr><td><div class="rippleCover"><table class="border-none"><tr>
+                <td width="30%"><%= item.num %></td>
+                <td width="30%"><a href="/view/<%= item.num %>"><%= item.title %></a></td>
+                <td width="20%"><%= item.submitCnt %></td>
+                <td width="20%"><%= item.correctCnt %></td>
+            </tr></table></div></td></tr>
     <% }); %>
         </table>
         <div class="pages">
     <% let pageList = [ page ]; %>
-    <% if (1 != page) pageList.push(1); %>
-    <% if (page != pages) pageList.push(pages); %>
+    <% if (1 < page) pageList.push(1); %>
+    <% if (page < pages) pageList.push(pages); %>
     <% for (var i = 0; page - (1 << i) > 1; i++) pageList.push(page - (1 << i)); %>
     <% for (var i = 0; page + (1 << i) < pages; i++) pageList.push(page + (1 << i)); %>
     <% pageList.sort(); %>

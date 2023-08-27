@@ -275,18 +275,31 @@
     .border-none tr td:last-child, .border-none th:last-child {
         border-right: none;
     }
+    .rippleCover {
+        overflow: hidden;
+        display: block;
+        position: relative;
+    }
+    td:has(.rippleCover) {
+        margin: 0;
+        padding: 0;
+    }
+    .rippleCover table {
+        margin-bottom: 0;
+    }
 </style>
 
 <script>
     $(function () {
         $('button').mousedown(createRipple);
+        $('.rippleCover').mousedown(createRipple);
         $('textarea').keyup(grow);
       setInterval(function () {
         var curr = new Date().getTime();
-        while (ripples.length > 0 && ripples[0].time + 1000 < curr) {
-          // ripples[0].remove();
-          ripples.shift();
-        }
+        // while (ripples.length > 0 && ripples[0].time + 1000 < curr) {
+        //   ripples[0].remove();
+        //   ripples.shift();
+        // }
       }, 100);
     });
 
@@ -298,8 +311,7 @@
     }
 
     function createRipple(e) {
-        console.log(this);
-      this.appendChild(actualRipple(e, this, true));
+        this.appendChild(actualRipple(e, this, true));
     }
 
     function actualRipple(e, th, sc) {

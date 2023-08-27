@@ -2016,6 +2016,13 @@ app.post('/grading/:num', async function (req, res) {
     });
 });
 
+app.get('/move/:num', async function (req, res) {
+    if (!req.session.auth) return res.redirect('/signin');
+    if (!req.session.auth.admin) return res.redirect(`/view/${req.params.num}`);
+    const [ rows, fields ] = await sql.query(`SELECT COUNT(1) FROM problems WHERE num = ${mysql.escape(req.params.num)};`);
+    if (rows[0]['COUNT(1)'] <= 0) return res.redirect('/');
+});
+
 app.get('/:num', function (req, res) {
     return res.redirect(`/view/${req.params.num}`);
 });
