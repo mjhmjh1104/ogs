@@ -57,7 +57,7 @@
         });
         socket.on('updt', function (data) {
             console.log(data);
-            if (data.result === 'Marking' && ($('.result').html() !== 'Marking' && $('.result').html() !== 'Downloading Data' && $('#result').html() !== 'Compiling' && $('.result').html() !== 'Preparing Data')) return;
+            if (data.result === 'Marking' && ($('.result').html() !== 'Marking' && $('.result').html() !== 'Downloading Data' && $('.result').html() !== 'Compiling' && $('.result').html() !== 'Preparing Data')) return;
             if (data.progress !== undefined) {
                 if (data.result !== 'Accepted' && data.result !== 'Marking') {
                     if (data.result === 'Partially Correct') {
